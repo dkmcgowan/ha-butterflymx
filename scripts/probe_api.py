@@ -11,6 +11,13 @@ pointed at a real building:
 3. Do call snapshot URLs need the bearer token, or are they pre-signed?
 4. What values actually appear in a call's ``notification_type`` and ``status``?
 
+It then looks at the endpoints planned for later releases, so their real field
+values are known before any entity code is written against them: access logs,
+access point schedules, visitor and delivery passes, and the resident PIN.
+
+Every request is a GET.  Nothing here creates, modifies or deletes anything, and
+no door is ever released.
+
 Standard library only, so it runs with any Python 3.11+ and needs no virtualenv.
 
 Usage:
@@ -69,6 +76,12 @@ EXPECTED_KEYS = {
 }
 
 REDACT_KEYS = {
+    "code",
+    "pin",
+    "pin_code",
+    "passcode",
+    "qr_code",
+    "secret",
     "email",
     "first_name",
     "last_name",
@@ -307,7 +320,7 @@ def probe(api_url: str, token: str) -> tuple[dict[str, Any], list[str]]:
     findings: list[str] = []
 
     # Q1: does scope=self work, and how does it differ from an unscoped list?
-    print("\n[1/5] GET /v4/tenants?scope=self")
+    print("\n[1/9] GET /v4/tenants?scope=self")
     status, scoped = _api_get(api_url, "/tenants", token, scope="self", per=100)
     transcript["tenants_self"] = {"status": status, "body": redact(scoped)}
     scoped_rows = scoped.get("data", []) if isinstance(scoped, dict) else []
@@ -351,7 +364,7 @@ def probe(api_url: str, token: str) -> tuple[dict[str, Any], list[str]]:
     print(f"      buildings: {building_ids}")
 
     # Access points are the primary source of lock entities.
-    print(f"\n[2/5] GET /v4/access_points (building {building_id})")
+    print(f"\n[2/9] GET /v4/access_points (building {building_id})")
     status, points = _api_get(
         api_url, "/access_points", token, per=100, **{"q[building_id_eq]": str(building_id)}
     )
@@ -370,7 +383,7 @@ def probe(api_url: str, token: str) -> tuple[dict[str, Any], list[str]]:
     _report_keys("access_point", point_rows, findings)
 
     # Q2: can a resident enumerate devices?
-    print(f"\n[3/5] GET /v4/devices (building {building_id})")
+    print(f"\n[3/9] GET /v4/devices (building {building_id})")
     status, devices = _api_get(
         api_url, "/devices", token, per=100, **{"q[building_id_eq]": str(building_id)}
     )
@@ -392,7 +405,7 @@ def probe(api_url: str, token: str) -> tuple[dict[str, Any], list[str]]:
     _report_keys("device", device_rows, findings)
 
     # Q4: what a real call looks like.
-    print(f"\n[4/5] GET /v4/buildings/{building_id}/calls")
+    print(f"\n[4/9] GET /v4/buildings/{building_id}/calls")
     status, calls = _api_get(api_url, f"/buildings/{building_id}/calls", token, per=50)
     transcript["calls"] = {"status": status, "body": redact(calls)}
     call_rows = calls.get("data", []) if isinstance(calls, dict) else []
@@ -427,7 +440,7 @@ def probe(api_url: str, token: str) -> tuple[dict[str, Any], list[str]]:
     _report_keys("call", call_rows, findings)
 
     # Q3: do snapshot URLs need credentials?
-    print("\n[5/5] Snapshot URL authentication")
+    print("\n[5/9] Snapshot URL authentication")
     image_url = next(
         (
             row["image_url"]
@@ -466,7 +479,106 @@ def probe(api_url: str, token: str) -> tuple[dict[str, Any], list[str]]:
                 "the image entity will stay unavailable"
             )
 
+    _probe_roadmap(api_url, token, building_id, point_rows, scoped_rows, transcript, findings)
     return transcript, findings
+
+
+def _probe_roadmap(
+    api_url: str,
+    token: str,
+    building_id: int,
+    point_rows: list[Any],
+    tenant_rows: list[Any],
+    transcript: dict[str, Any],
+    findings: list[str],
+) -> None:
+    """Look at the endpoints planned for later releases.
+
+    All read-only.  The point is to learn the real field values before writing
+    entity code against them, the same reason the call-log probe exists.
+    """
+    # Access logs: who actually came in, how, and with what photo.
+    print(f"\n[6/9] GET /v4/buildings/{building_id}/access_logs")
+    status, logs = _api_get(api_url, f"/buildings/{building_id}/access_logs", token, per=50)
+    transcript["access_logs"] = {"status": status, "body": redact(logs)}
+    log_rows = logs.get("data", []) if isinstance(logs, dict) else []
+    print(f"      HTTP {status}, {len(log_rows)} entry(s)")
+    if status != 200:
+        findings.append(f"   /v4/buildings/{{id}}/access_logs returned HTTP {status}")
+    elif not log_rows:
+        findings.append("   access log is empty; open a door and re-run to capture a payload")
+    else:
+        for field in ("entry_method", "release_type", "release_status"):
+            values = sorted(
+                {row.get(field) for row in log_rows if isinstance(row, dict)} - {None}
+            )
+            findings.append(f"OK access_log {field} values: {values}")
+        with_image = sum(
+            1 for row in log_rows if isinstance(row, dict) and row.get("image_url")
+        )
+        findings.append(f"OK {with_image}/{len(log_rows)} access log entries carry an image_url")
+
+    # Schedules: when the current user may use a given access point.
+    first_point = next((row for row in point_rows if isinstance(row, dict)), None)
+    if first_point:
+        point_id = first_point.get("id")
+        print(f"\n[7/9] GET /v4/access_points/{point_id}/schedules")
+        status, schedules = _api_get(api_url, f"/access_points/{point_id}/schedules", token)
+        transcript["schedules"] = {"status": status, "body": redact(schedules)}
+        rows = schedules.get("data", []) if isinstance(schedules, dict) else []
+        print(f"      HTTP {status}, {len(rows)} schedule(s)")
+        if status != 200:
+            findings.append(f"   /v4/access_points/{{id}}/schedules returned HTTP {status}")
+        elif not rows:
+            findings.append(
+                "   no schedules on this access point, which usually means 24/7 access. "
+                "A schedule binary_sensor would read 'on' permanently here."
+            )
+        else:
+            findings.append(f"OK schedules present, sample: {rows[0]}")
+
+    # Virtual keys / visitor and delivery passes.
+    print("\n[8/9] GET /v4/keychains")
+    status, keychains = _api_get(api_url, "/keychains", token, per=50)
+    transcript["keychains"] = {"status": status, "body": redact(keychains)}
+    key_rows = keychains.get("data", []) if isinstance(keychains, dict) else []
+    print(f"      HTTP {status}, {len(key_rows)} keychain(s)")
+    if status != 200:
+        findings.append(
+            f"   /v4/keychains returned HTTP {status}; residents may not list their own passes"
+        )
+    elif not key_rows:
+        findings.append("   no visitor passes exist; create one in the app and re-run")
+    else:
+        findings.append(f"OK keychain fields: {sorted(_keys_of(key_rows))}")
+        findings.append(
+            "   check the transcript for how active vs expired is represented "
+            "(a status field, or just an expiry timestamp)"
+        )
+
+    # Resident PIN.  The code itself is redacted before anything is written.
+    tenant = next((row for row in tenant_rows if isinstance(row, dict)), None)
+    tenant_id = tenant.get("id") if tenant else None
+    if tenant_id:
+        print(f"\n[9/9] GET /v4/access_tools (tenant {tenant_id})")
+        status, tools = _api_get(
+            api_url, "/access_tools", token, per=50, **{"q[tenant_id_eq]": str(tenant_id)}
+        )
+        transcript["access_tools"] = {"status": status, "body": redact(tools)}
+        tool_rows = tools.get("data", []) if isinstance(tools, dict) else []
+        print(f"      HTTP {status}, {len(tool_rows)} access tool(s)")
+        if status != 200:
+            findings.append(
+                f"   /v4/access_tools returned HTTP {status}; a resident cannot read "
+                "their own PIN, so PIN support would be write-only at best"
+            )
+        else:
+            types = sorted({row.get("type") for row in tool_rows if isinstance(row, dict)} - {None})
+            findings.append(f"OK access_tool types visible to this resident: {types}")
+            findings.append(
+                "   PIN codes are redacted in the transcript; check the terminal "
+                "output above only if you need the raw value"
+            )
 
 
 # --------------------------------------------------------------------------- #
