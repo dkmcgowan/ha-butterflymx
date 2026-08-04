@@ -215,7 +215,7 @@ class ButterflyMXCallCoordinator(DataUpdateCoordinator[dict[int, Call]]):
         self.topology_coordinator = topology_coordinator
         self._seen_call_ids: dict[int, None] = {}
         self._since: datetime | None = None
-        self._listeners: list[Callable[[Tenant, Call], None]] = []
+        self._call_listeners: list[Callable[[Tenant, Call], None]] = []
         self._push_lock = asyncio.Lock()
         # The first poll happens during setup and would otherwise re-announce
         # every call that came in while Home Assistant was down.
@@ -226,12 +226,12 @@ class ButterflyMXCallCoordinator(DataUpdateCoordinator[dict[int, Call]]):
         self, listener: Callable[[Tenant, Call], None]
     ) -> Callable[[], None]:
         """Register a callback fired for each newly observed call."""
-        self._listeners.append(listener)
+        self._call_listeners.append(listener)
 
         @callback
         def _remove() -> None:
-            if listener in self._listeners:
-                self._listeners.remove(listener)
+            if listener in self._call_listeners:
+                self._call_listeners.remove(listener)
 
         return _remove
 
@@ -303,7 +303,7 @@ class ButterflyMXCallCoordinator(DataUpdateCoordinator[dict[int, Call]]):
                     **call.as_event_data(),
                 },
             )
-            for listener in list(self._listeners):
+            for listener in list(self._call_listeners):
                 listener(tenant, call)
 
         return latest
