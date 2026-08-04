@@ -1,0 +1,104 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "ButterflyMX",
+        "description": "Choose which ButterflyMX environment your API credentials belong to.",
+        "data": {
+          "environment": "Environment"
+        }
+      },
+      "endpoints": {
+        "title": "Custom endpoints",
+        "description": "Enter the hostnames for your dedicated ButterflyMX environment.",
+        "data": {
+          "accounts_url": "Accounts (OAuth) URL",
+          "api_url": "API URL"
+        }
+      },
+      "credentials": {
+        "title": "API credentials",
+        "description": "Enter the client ID and secret ButterflyMX issued to you. Leave the redirect URI at its default unless ButterflyMX registered a custom one for your application.",
+        "data": {
+          "client_id": "Client ID",
+          "client_secret": "Client secret",
+          "redirect_uri": "Redirect URI"
+        }
+      },
+      "authorize": {
+        "title": "Link your ButterflyMX account",
+        "description": "1. Open this link and sign in with your ButterflyMX account:\n\n{authorize_url}\n\n2. Approve access.\n3. ButterflyMX will show you an authorization code (or send you to {redirect_uri} with a `code` parameter).\n4. Paste the code - or the whole URL you landed on - below.\n\nThe code is single use and expires quickly, so paste it promptly.",
+        "data": {
+          "auth_code": "Authorization code"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Reconnect ButterflyMX",
+        "description": "The stored ButterflyMX authorization for client `{account}` is no longer valid. Continue to link the account again."
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not reach ButterflyMX. Check your network and the endpoint URLs.",
+      "invalid_auth": "ButterflyMX rejected these credentials or this authorization code.",
+      "invalid_auth_code": "That does not look like an authorization code.",
+      "invalid_url": "Enter full URLs including https://",
+      "unknown": "Unexpected error. Check the Home Assistant log for details."
+    },
+    "abort": {
+      "already_configured": "This ButterflyMX account is already set up.",
+      "reauth_successful": "ButterflyMX was reconnected successfully.",
+      "wrong_account": "Those credentials are for a different ButterflyMX account."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "ButterflyMX options",
+        "description": "Webhook push needs Home Assistant to be reachable from the internet. When it is unavailable the integration keeps polling.",
+        "data": {
+          "call_scan_interval": "Call polling interval",
+          "relock_delay": "Show door as unlocked for",
+          "enable_webhook": "Use webhook push instead of polling (experimental)"
+        }
+      }
+    }
+  },
+  "selector": {
+    "environment": {
+      "options": {
+        "production": "Production",
+        "sandbox": "Sandbox",
+        "custom": "Custom / dedicated environment"
+      }
+    }
+  },
+  "entity": {
+    "event": {
+      "doorbell": {
+        "name": "Doorbell",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "call": "Call"
+            }
+          }
+        }
+      }
+    },
+    "image": {
+      "last_call_snapshot": {
+        "name": "Last call snapshot"
+      }
+    },
+    "sensor": {
+      "last_call": {
+        "name": "Last call"
+      }
+    }
+  },
+  "exceptions": {
+    "door_release_failed": {
+      "message": "Could not open {door}: {error}"
+    }
+  }
+}

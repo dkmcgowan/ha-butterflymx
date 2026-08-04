@@ -1,0 +1,19 @@
+{
+  "entity": {
+    "event": {
+      "doorbell": {
+        "default": "mdi:doorbell-video"
+      }
+    },
+    "image": {
+      "last_call_snapshot": {
+        "default": "mdi:image-area"
+      }
+    },
+    "sensor": {
+      "last_call": {
+        "default": "mdi:phone-incoming"
+      }
+    }
+  }
+}

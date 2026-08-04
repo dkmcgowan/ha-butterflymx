@@ -1,0 +1,27 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+.venv/
+venv/
+env/
+
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Local Home Assistant test configuration
+config/
+!custom_components/

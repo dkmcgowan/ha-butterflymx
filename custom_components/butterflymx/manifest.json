@@ -1,0 +1,13 @@
+{
+  "domain": "butterflymx",
+  "name": "ButterflyMX",
+  "codeowners": ["@dkmcgowan"],
+  "config_flow": true,
+  "dependencies": ["http", "webhook"],
+  "documentation": "https://github.com/dkmcgowan/ha-butterflymx",
+  "integration_type": "hub",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/dkmcgowan/ha-butterflymx/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}
