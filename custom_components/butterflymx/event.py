@@ -58,7 +58,7 @@ class ButterflyMXDoorbellEvent(ButterflyMXCallEntity, EventEntity):
     def __init__(
         self, coordinator: ButterflyMXCallCoordinator, tenant: Tenant
     ) -> None:
-        """Initialise the doorbell event entity."""
+        """Initialize the doorbell event entity."""
         super().__init__(coordinator, tenant)
         self._attr_unique_id = f"{DOMAIN}_tenant_{tenant.id}_doorbell"
 

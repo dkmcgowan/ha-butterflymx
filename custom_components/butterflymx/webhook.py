@@ -35,7 +35,7 @@ class ButterflyMXWebhookManager:
     """Registers a Home Assistant webhook and mirrors it in ButterflyMX."""
 
     def __init__(self, hass: HomeAssistant, entry: Any) -> None:
-        """Initialise the manager."""
+        """Initialize the manager."""
         self.hass = hass
         self.entry = entry
         self._webhook_id: str | None = None

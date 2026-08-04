@@ -80,7 +80,7 @@ class ButterflyMXConfigFlow(ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
     def __init__(self) -> None:
-        """Initialise flow state."""
+        """Initialize flow state."""
         self._environment: str = ENV_PRODUCTION
         self._accounts_url: str = ENVIRONMENTS[ENV_PRODUCTION][CONF_ACCOUNTS_URL]
         self._api_url: str = ENVIRONMENTS[ENV_PRODUCTION][CONF_API_URL]
@@ -308,7 +308,7 @@ class ButterflyMXOptionsFlow(OptionsFlow):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Manage polling and behaviour options."""
+        """Manage polling and behavior options."""
         if user_input is not None:
             return self.async_create_entry(data=user_input)
 

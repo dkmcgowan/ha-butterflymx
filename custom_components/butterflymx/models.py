@@ -210,7 +210,7 @@ class Call:
         )
 
     def as_event_data(self) -> dict[str, Any]:
-        """Serialise this call for the Home Assistant event bus."""
+        """Serialize this call for the Home Assistant event bus."""
         return {
             "call_id": self.id,
             "building_id": self.building_id,

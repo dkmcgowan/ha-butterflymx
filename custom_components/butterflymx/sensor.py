@@ -53,7 +53,7 @@ class ButterflyMXLastCallSensor(ButterflyMXCallEntity, SensorEntity):
     def __init__(
         self, coordinator: ButterflyMXCallCoordinator, tenant: Tenant
     ) -> None:
-        """Initialise the sensor."""
+        """Initialize the sensor."""
         super().__init__(coordinator, tenant)
         self._attr_unique_id = f"{DOMAIN}_tenant_{tenant.id}_last_call"
 

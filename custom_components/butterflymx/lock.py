@@ -79,7 +79,7 @@ class ButterflyMXLock(ButterflyMXTopologyEntity, LockEntity):
         building_name: str | None,
         relock_delay: int,
     ) -> None:
-        """Initialise the lock."""
+        """Initialize the lock."""
         super().__init__(coordinator)
         self._target = target
         self._relock_delay = relock_delay

@@ -55,7 +55,7 @@ class ButterflyMXTopologyEntity(CoordinatorEntity[ButterflyMXTopologyCoordinator
     _attr_has_entity_name = True
 
     def __init__(self, coordinator: ButterflyMXTopologyCoordinator) -> None:
-        """Initialise the entity."""
+        """Initialize the entity."""
         super().__init__(coordinator)
 
 
@@ -67,7 +67,7 @@ class ButterflyMXCallEntity(CoordinatorEntity[ButterflyMXCallCoordinator]):
     def __init__(
         self, coordinator: ButterflyMXCallCoordinator, tenant: Tenant
     ) -> None:
-        """Initialise the entity."""
+        """Initialize the entity."""
         super().__init__(coordinator)
         self._tenant = tenant
         self._attr_device_info = unit_device_info(tenant)

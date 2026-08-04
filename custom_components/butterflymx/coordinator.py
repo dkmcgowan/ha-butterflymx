@@ -133,7 +133,7 @@ class ButterflyMXTopologyCoordinator(DataUpdateCoordinator[ButterflyMXTopology])
         entry: ConfigEntry,
         client: ButterflyMXClient,
     ) -> None:
-        """Initialise the topology coordinator."""
+        """Initialize the topology coordinator."""
         super().__init__(
             hass,
             _LOGGER,
@@ -203,7 +203,7 @@ class ButterflyMXCallCoordinator(DataUpdateCoordinator[dict[int, Call]]):
         topology_coordinator: ButterflyMXTopologyCoordinator,
         scan_interval: int,
     ) -> None:
-        """Initialise the call coordinator."""
+        """Initialize the call coordinator."""
         super().__init__(
             hass,
             _LOGGER,

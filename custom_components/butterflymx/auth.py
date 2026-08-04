@@ -136,7 +136,7 @@ class ButterflyMXAuth:
         token: dict[str, Any],
         token_updater: TokenUpdater | None = None,
     ) -> None:
-        """Initialise the token holder."""
+        """Initialize the token holder."""
         self._session = session
         self._accounts_url = accounts_url
         self._client_id = client_id

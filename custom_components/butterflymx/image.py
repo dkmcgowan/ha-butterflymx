@@ -70,7 +70,7 @@ class ButterflyMXCallSnapshot(
         coordinator: ButterflyMXCallCoordinator,
         tenant: Tenant,
     ) -> None:
-        """Initialise the snapshot entity."""
+        """Initialize the snapshot entity."""
         CoordinatorEntity.__init__(self, coordinator)
         ImageEntity.__init__(self, hass)
         self._tenant = tenant

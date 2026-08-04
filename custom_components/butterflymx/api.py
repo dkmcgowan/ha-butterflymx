@@ -2,7 +2,7 @@
 
 ButterflyMX publishes no rate limits, so this client stays well inside any
 plausible one: it caps concurrency, spaces requests out, retries only idempotent
-calls, and honours ``Retry-After`` when the server pushes back.  Door releases
+calls, and honors ``Retry-After`` when the server pushes back.  Door releases
 are never retried, because firing a door twice after a slow response is worse
 than failing.
 """
@@ -47,7 +47,7 @@ class _Throttler:
     """Cap concurrency and enforce a minimum gap between requests."""
 
     def __init__(self, max_concurrent: int, min_interval: float) -> None:
-        """Initialise the throttler."""
+        """Initialize the throttler."""
         self._semaphore = asyncio.Semaphore(max_concurrent)
         self._spacing_lock = asyncio.Lock()
         self._min_interval = min_interval
@@ -99,7 +99,7 @@ class ButterflyMXClient:
         api_url: str,
         auth: ButterflyMXAuth,
     ) -> None:
-        """Initialise the client."""
+        """Initialize the client."""
         self._session = session
         self._api_url = api_url.rstrip("/")
         self._auth = auth
@@ -199,7 +199,7 @@ class ButterflyMXClient:
                 ) from err
 
     async def _async_backoff(self, attempt: int, retry_after: float | None = None) -> None:
-        """Sleep before retrying, honouring the server's Retry-After."""
+        """Sleep before retrying, honoring the server's Retry-After."""
         if retry_after is not None:
             delay = min(retry_after, BACKOFF_MAX)
         else:

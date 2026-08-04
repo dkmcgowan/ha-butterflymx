@@ -22,8 +22,8 @@ It gives you:
 > This is an unofficial community integration. It is not built or supported by
 > ButterflyMX.
 >
-> Parts of this project were written with the help of Claude Code. Everything
-> here has been reviewed before being committed.
+> Parts of this project were written with the help of Claude Code. It has not
+> yet been tested against a live ButterflyMX account.
 
 ## Requirements
 
@@ -117,7 +117,7 @@ ButterflyMX publishes no rate limits, so the integration errs on the
 conservative side:
 
 - at most 4 requests in flight, spaced at least 250 ms apart;
-- exponential backoff with jitter on `429` and `5xx`, honouring `Retry-After`;
+- exponential backoff with jitter on `429` and `5xx`, honoring `Retry-After`;
 - topology (buildings, access points, devices) refreshed only once an hour;
 - **door releases are never retried automatically**, since a retry could buzz a
   door twice, and repeated releases of the same door within 3 seconds are
@@ -134,7 +134,7 @@ them when the option is turned off or the entry is unloaded.
 
 It is marked experimental because ButterflyMX documents the registration
 endpoints and the general contents of the payload but not an exact schema. The
-parser is forgiving and logs anything it does not recognise at debug level. If
+parser is forgiving and logs anything it does not recognize at debug level. If
 push does not fire for you, please open an issue with a debug log. Polling keeps
 running regardless.
 
