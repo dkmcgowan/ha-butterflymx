@@ -194,15 +194,60 @@ logger:
 Diagnostics can be downloaded from the integration page; credentials, tokens and
 personal details are redacted.
 
-## Contributing
+## Development
 
-Issues and pull requests are welcome. Run the checks with:
+### Unit tests
 
 ```bash
 pip install -r requirements-dev.txt
-ruff check custom_components tests
+ruff check custom_components tests scripts
 pytest
 ```
+
+The suite runs against the Home Assistant test harness and needs Linux or
+macOS — Home Assistant imports `fcntl`, so it cannot run on Windows. CI runs it
+on every push.
+
+### Probing the real API
+
+`scripts/probe_api.py` is a standalone tool (standard library only, no
+virtualenv needed) that walks the OAuth flow once and reports what a live
+account actually returns — which endpoints a resident is allowed to call, what
+values appear in call payloads, and whether snapshot URLs are pre-signed. Use
+it to check assumptions before deploying, and to capture real payloads for test
+fixtures.
+
+```bash
+export BMX_CLIENT_ID=... BMX_CLIENT_SECRET=...
+python scripts/probe_api.py --env sandbox
+```
+
+It caches the token in `scripts/.bmx-token-<env>.json` and writes a redacted
+transcript to `scripts/probe-output-<env>.json`. Both are gitignored; names,
+emails, serial numbers and URL signatures are stripped before anything is
+written, so the transcript is safe to attach to an issue.
+
+### Deploying to a Home Assistant instance
+
+`scripts/deploy.sh` copies the integration over SSH and restarts Home Assistant
+Core. It needs the **Advanced SSH & Web Terminal** add-on with key
+authentication; it uses only `ssh` and `tar`, so it works from Git Bash on
+Windows too.
+
+```bash
+echo 'HAOS_HOST=homeassistant.local' > scripts/.env.deploy
+scripts/deploy.sh              # copy and restart
+scripts/deploy.sh --logs       # copy, restart, then follow the log
+scripts/deploy.sh --no-restart # copy only
+```
+
+A restart is required for Python changes: reloading a config entry re-runs
+setup but does not re-import changed modules.
+
+Test against **sandbox credentials first**. Door releases are real — a mistake
+while pointed at production buzzes an actual door.
+
+Issues and pull requests are welcome.
 
 ## License
 

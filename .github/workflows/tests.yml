@@ -20,6 +20,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
       - name: Ruff
-        run: ruff check custom_components tests
+        run: ruff check custom_components tests scripts
       - name: Pytest
         run: pytest --cov=custom_components.butterflymx --cov-report=term-missing

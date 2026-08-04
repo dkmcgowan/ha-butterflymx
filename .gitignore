@@ -25,3 +25,8 @@ Thumbs.db
 # Local Home Assistant test configuration
 config/
 !custom_components/
+
+# Developer tooling output - may contain credentials or account data
+scripts/.env.deploy
+scripts/.bmx-token-*.json
+scripts/probe-output-*.json
