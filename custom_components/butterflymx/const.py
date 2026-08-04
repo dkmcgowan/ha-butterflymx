@@ -67,8 +67,8 @@ BACKOFF_MAX: Final = 30.0  # seconds
 REQUEST_TIMEOUT: Final = 30  # seconds
 PAGE_SIZE: Final = 100
 
-# Door release requests are not idempotent - never auto-retry them, and refuse
-# to fire the same door more often than this.
+# Door release requests are not idempotent, so they are never auto-retried, and
+# the same door will not be fired more often than this.
 DOOR_RELEASE_COOLDOWN: Final = 3.0  # seconds
 
 # --- Polling ------------------------------------------------------------------

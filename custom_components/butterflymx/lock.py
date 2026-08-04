@@ -103,7 +103,7 @@ class ButterflyMXLock(ButterflyMXTopologyEntity, LockEntity):
         }
 
     async def async_lock(self, **kwargs: Any) -> None:
-        """Locking is implicit - the strike re-engages on its own."""
+        """Locking is implicit, since the strike re-engages on its own."""
         self._cancel_relock()
         self._set_locked()
 

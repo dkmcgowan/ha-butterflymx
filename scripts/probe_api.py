@@ -11,7 +11,7 @@ pointed at a real building:
 3. Do call snapshot URLs need the bearer token, or are they pre-signed?
 4. What values actually appear in a call's ``notification_type`` and ``status``?
 
-Standard library only - it runs with any Python 3.11+, no virtualenv needed.
+Standard library only, so it runs with any Python 3.11+ and needs no virtualenv.
 
 Usage:
 
@@ -235,7 +235,7 @@ def get_token(env: str, accounts_url: str, client_id: str, client_secret: str) -
             print(f"  refresh failed ({err}); starting a fresh authorization")
         else:
             _save_token(env, token)
-            print("  refresh succeeded - refresh tokens work as documented")
+            print("  refresh succeeded; refresh tokens work as documented")
             return token
 
     token = authorize(accounts_url, client_id, client_secret)
@@ -306,7 +306,7 @@ def probe(api_url: str, token: str) -> tuple[dict[str, Any], list[str]]:
     transcript: dict[str, Any] = {}
     findings: list[str] = []
 
-    # Q1 - does scope=self work, and how does it differ from an unscoped list?
+    # Q1: does scope=self work, and how does it differ from an unscoped list?
     print("\n[1/5] GET /v4/tenants?scope=self")
     status, scoped = _api_get(api_url, "/tenants", token, scope="self", per=100)
     transcript["tenants_self"] = {"status": status, "body": redact(scoped)}
@@ -320,7 +320,7 @@ def probe(api_url: str, token: str) -> tuple[dict[str, Any], list[str]]:
 
     if status != 200:
         findings.append(
-            f"!! /v4/tenants?scope=self returned HTTP {status} - the integration cannot start"
+            f"!! /v4/tenants?scope=self returned HTTP {status}; the integration cannot start"
         )
     elif not scoped_rows:
         findings.append(
@@ -344,13 +344,13 @@ def probe(api_url: str, token: str) -> tuple[dict[str, Any], list[str]]:
         }
     )
     if not building_ids:
-        findings.append("!! No building_id found - the remaining probes cannot run")
+        findings.append("!! No building_id found; the remaining probes cannot run")
         return transcript, findings
 
     building_id = building_ids[0]
     print(f"      buildings: {building_ids}")
 
-    # Access points - the primary source of lock entities.
+    # Access points are the primary source of lock entities.
     print(f"\n[2/5] GET /v4/access_points (building {building_id})")
     status, points = _api_get(
         api_url, "/access_points", token, per=100, **{"q[building_id_eq]": str(building_id)}
@@ -359,7 +359,9 @@ def probe(api_url: str, token: str) -> tuple[dict[str, Any], list[str]]:
     point_rows = points.get("data", []) if isinstance(points, dict) else []
     print(f"      HTTP {status}, {len(point_rows)} access point(s)")
     if status != 200:
-        findings.append(f"!! /v4/access_points returned HTTP {status} - no locks would be created")
+        findings.append(
+            f"!! /v4/access_points returned HTTP {status}; no locks would be created"
+        )
     else:
         findings.append(f"OK {len(point_rows)} access point(s) -> {len(point_rows)} lock entities")
         for row in point_rows:
@@ -367,7 +369,7 @@ def probe(api_url: str, token: str) -> tuple[dict[str, Any], list[str]]:
                 print(f"        - {row.get('name')!r} (id {row.get('id')})")
     _report_keys("access_point", point_rows, findings)
 
-    # Q2 - can a resident enumerate devices?
+    # Q2: can a resident enumerate devices?
     print(f"\n[3/5] GET /v4/devices (building {building_id})")
     status, devices = _api_get(
         api_url, "/devices", token, per=100, **{"q[building_id_eq]": str(building_id)}
@@ -380,16 +382,16 @@ def probe(api_url: str, token: str) -> tuple[dict[str, Any], list[str]]:
         findings.append(f"OK residents can list devices; types seen: {types}")
         if not any(t in ("smart_lock", "remote_lock") for t in types):
             findings.append(
-                "   no smart_lock/remote_lock devices - only access-point locks will appear"
+                "   no smart_lock/remote_lock devices; only access-point locks will appear"
             )
     else:
         findings.append(
-            f"   /v4/devices returned HTTP {status} - residents cannot enumerate devices. "
+            f"   /v4/devices returned HTTP {status}; residents cannot enumerate devices. "
             "The integration already degrades gracefully, but unit smart locks would be invisible."
         )
     _report_keys("device", device_rows, findings)
 
-    # Q4 - what a real call looks like.
+    # Q4: what a real call looks like.
     print(f"\n[4/5] GET /v4/buildings/{building_id}/calls")
     status, calls = _api_get(api_url, f"/buildings/{building_id}/calls", token, per=50)
     transcript["calls"] = {"status": status, "body": redact(calls)}
@@ -397,7 +399,7 @@ def probe(api_url: str, token: str) -> tuple[dict[str, Any], list[str]]:
     print(f"      HTTP {status}, {len(call_rows)} call(s)")
     if status != 200:
         findings.append(
-            f"!! /v4/buildings/{{id}}/calls returned HTTP {status} - no doorbell events"
+            f"!! /v4/buildings/{{id}}/calls returned HTTP {status}; no doorbell events"
         )
     elif not call_rows:
         findings.append(
@@ -424,7 +426,7 @@ def probe(api_url: str, token: str) -> tuple[dict[str, Any], list[str]]:
         findings.append(f"OK recipient types seen: {recipients}")
     _report_keys("call", call_rows, findings)
 
-    # Q3 - do snapshot URLs need credentials?
+    # Q3: do snapshot URLs need credentials?
     print("\n[5/5] Snapshot URL authentication")
     image_url = next(
         (
@@ -436,7 +438,7 @@ def probe(api_url: str, token: str) -> tuple[dict[str, Any], list[str]]:
     )
     if not image_url:
         print("      skipped: no call with an image_url")
-        findings.append("   snapshot auth untested - no call in the log carried an image_url")
+        findings.append("   snapshot auth untested; no call in the log had an image_url")
     else:
         anon_status, anon_body = _request("GET", image_url, raw=True)
         auth_status, auth_body = _request("GET", image_url, token=token, raw=True)
@@ -460,7 +462,7 @@ def probe(api_url: str, token: str) -> tuple[dict[str, Any], list[str]]:
             )
         else:
             findings.append(
-                f"!! snapshot URL failed both ways ({anon_status}/{auth_status}) - "
+                f"!! snapshot URL failed both ways ({anon_status}/{auth_status}); "
                 "the image entity will stay unavailable"
             )
 
@@ -485,7 +487,7 @@ def main() -> int:
         parser.error("set BMX_CLIENT_ID and BMX_CLIENT_SECRET, or pass --client-id/--client-secret")
 
     urls = ENVIRONMENTS[args.env]
-    print(f"ButterflyMX probe - {args.env}")
+    print(f"ButterflyMX probe: {args.env}")
     print(f"  accounts: {urls['accounts']}")
     print(f"  api:      {urls['api']}")
 

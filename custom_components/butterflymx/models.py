@@ -55,7 +55,7 @@ class Unit:
 
 @dataclass(frozen=True, slots=True)
 class Tenant:
-    """A tenant record - the identity a door release is performed as."""
+    """A tenant record, the identity a door release is performed as."""
 
     id: int
     building_id: int
@@ -105,7 +105,7 @@ class Tenant:
 
 @dataclass(frozen=True, slots=True)
 class AccessPoint:
-    """An access point - intercom, ACS controller, keypad or common-area lock."""
+    """An access point: intercom, ACS controller, keypad or common-area lock."""
 
     id: int
     building_id: int

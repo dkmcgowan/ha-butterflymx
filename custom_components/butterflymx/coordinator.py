@@ -3,7 +3,7 @@
 Two loops with very different cadences:
 
 * :class:`ButterflyMXTopologyCoordinator` refreshes the account's tenants,
-  access points and devices once an hour - doors do not move around.
+  access points and devices once an hour, because doors do not move around.
 * :class:`ButterflyMXCallCoordinator` polls the call log every few seconds so a
   visitor buzzing the intercom shows up quickly.  When webhook push is enabled
   the same coordinator accepts calls handed to it by the webhook view.
@@ -73,7 +73,7 @@ def build_lock_targets(topology: ButterflyMXTopology) -> list[LockTarget]:
 
     Access points cover intercoms, ACS controllers, keypads and common-area
     locks.  Unit-level smart locks are not access points and have to be released
-    by ``device_id`` instead, so they are added separately - skipping any device
+    by ``device_id`` instead, so they are added separately, skipping any device
     already reachable through an access point to avoid duplicate entities.
     """
     targets: list[LockTarget] = []

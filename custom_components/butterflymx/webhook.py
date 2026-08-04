@@ -4,9 +4,9 @@ Polling the call log is the default because it works for every install.  If Home
 Assistant is reachable from the internet, ButterflyMX can push call events
 instead, which removes the polling latency.
 
-This is experimental: ButterflyMX documents the webhook registration endpoints
-and the general shape of the payload, but not an exact schema, so the parser
-below is deliberately forgiving and logs anything it cannot interpret.
+This is experimental.  ButterflyMX documents the webhook registration endpoints
+and the general shape of the payload but not an exact schema, so the parser below
+accepts several shapes and logs anything it cannot interpret.
 """
 
 from __future__ import annotations

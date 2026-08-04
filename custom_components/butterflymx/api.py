@@ -1,9 +1,10 @@
 """Async client for the ButterflyMX v4 REST API.
 
-ButterflyMX publishes no rate limits, so this client is deliberately polite: it
-caps concurrency, spaces requests out, retries only idempotent calls, and honours
-``Retry-After`` when the server pushes back.  Door releases are never retried -
-firing a door twice because a response was slow is worse than failing.
+ButterflyMX publishes no rate limits, so this client stays well inside any
+plausible one: it caps concurrency, spaces requests out, retries only idempotent
+calls, and honours ``Retry-After`` when the server pushes back.  Door releases
+are never retried, because firing a door twice after a slow response is worse
+than failing.
 """
 
 from __future__ import annotations
@@ -262,8 +263,8 @@ class ButterflyMXClient:
     ) -> list[Call]:
         """List recent calls for a building, newest first.
 
-        Only the first page is fetched - this runs on the fast poll loop and the
-        integration only cares about calls it has not seen yet.
+        Only the first page is fetched, since this runs on the fast poll loop and
+        the integration only cares about calls it has not seen yet.
         """
         params: dict[str, Any] = {"page": 1, "per": min(limit, PAGE_SIZE)}
         if since is not None:

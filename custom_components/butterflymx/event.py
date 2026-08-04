@@ -79,4 +79,4 @@ class ButterflyMXDoorbellEvent(ButterflyMXCallEntity, EventEntity):
 
     @callback
     def _handle_coordinator_update(self) -> None:
-        """Ignore coordinator refreshes - events come from the listener."""
+        """Ignore coordinator refreshes; events come from the listener."""

@@ -26,7 +26,15 @@ Thumbs.db
 config/
 !custom_components/
 
-# Developer tooling output - may contain credentials or account data
+# Developer tooling output; may contain credentials or account data
 scripts/.env.deploy
 scripts/.bmx-token-*.json
 scripts/probe-output-*.json
+
+# Local working notes, never published
+NOTES.md
+notes/
+TODO.md
+*.local.md
+.claude/
+CLAUDE.md

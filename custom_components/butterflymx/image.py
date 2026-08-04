@@ -1,8 +1,8 @@
 """Snapshot image entity for the most recent ButterflyMX call.
 
 The call log returns a still image URL for each call.  Exposing it as an image
-entity (rather than a camera) matches what the API actually offers: there is no
-live stream in the REST API - real-time video lives in ButterflyMX's mobile SDK.
+entity rather than a camera matches what the API actually offers: there is no
+live stream in the REST API.  Real-time video lives in ButterflyMX's mobile SDK.
 """
 
 from __future__ import annotations

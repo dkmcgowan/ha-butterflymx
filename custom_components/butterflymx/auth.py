@@ -171,7 +171,7 @@ class ButterflyMXAuth:
             return str(self._token["access_token"])
 
     async def async_force_refresh(self) -> str:
-        """Refresh unconditionally - used after an unexpected 401."""
+        """Refresh unconditionally, after an unexpected 401."""
         async with self._lock:
             await self._async_refresh()
             return str(self._token["access_token"])
