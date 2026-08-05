@@ -93,6 +93,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ButterflyMXConfigEntry) 
     calls = ButterflyMXCallCoordinator(hass, entry, client, topology, scan_interval)
     # Prime the call log without announcing everything that happened while Home
     # Assistant was down; the first poll only marks existing calls as seen.
+    #
+    # This has to finish before the webhook is registered below.  Priming
+    # deliberately swallows the calls it sees, so a push arriving first would be
+    # marked seen, never announced, and then skipped by the poll as a duplicate:
+    # a doorbell that rings and does nothing.  Keep this ordering.
     await calls.async_config_entry_first_refresh()
 
     entry.runtime_data = ButterflyMXRuntimeData(

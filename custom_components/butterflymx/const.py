@@ -82,6 +82,13 @@ TOPOLOGY_SCAN_INTERVAL: Final = 3600  # seconds
 # How far back to look for calls on the first poll after startup.
 CALL_LOOKBACK: Final = 300  # seconds
 
+# Each poll asks for calls logged since the previous poll started, minus this
+# much.  Our clock and ButterflyMX's are not the same clock, and a call logged
+# while a request was in flight would fall between two windows and never be
+# seen.  Re-reading a few seconds of overlap is free, since calls already
+# announced are filtered out by ID.
+CALL_POLL_OVERLAP: Final = 30  # seconds
+
 DEFAULT_RELOCK_DELAY: Final = 5  # seconds
 MIN_RELOCK_DELAY: Final = 1
 MAX_RELOCK_DELAY: Final = 300

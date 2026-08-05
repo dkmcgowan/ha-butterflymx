@@ -11,7 +11,6 @@ Two loops with very different cadences:
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -27,6 +26,7 @@ from homeassistant.util import dt as dt_util
 from .api import ButterflyMXClient
 from .const import (
     CALL_LOOKBACK,
+    CALL_POLL_OVERLAP,
     DIRECT_LOCK_DEVICE_TYPES,
     DOMAIN,
     EVENT_CALL,
@@ -247,9 +247,13 @@ class ButterflyMXCallCoordinator(DataUpdateCoordinator[dict[int, Call]]):
         self._seen_call_ids: dict[int, None] = {}
         self._since: datetime | None = None
         self._call_listeners: list[Callable[[Tenant, Call], None]] = []
-        self._push_lock = asyncio.Lock()
         # The first poll happens during setup and would otherwise re-announce
         # every call that came in while Home Assistant was down.
+        #
+        # Anything processed while this is set is marked seen without ringing
+        # the doorbell, so a real call arriving now would be lost.  Setup
+        # avoids that by priming before the webhook is registered; see the
+        # ordering note in async_setup_entry.
         self._priming = True
 
     @callback
@@ -273,8 +277,6 @@ class ButterflyMXCallCoordinator(DataUpdateCoordinator[dict[int, Call]]):
             return dict(self.data or {})
 
         since = self._since or dt_util.utcnow() - timedelta(seconds=CALL_LOOKBACK)
-        # Overlap slightly so a call logged during the previous request is not
-        # missed because of clock skew between us and the API.
         poll_started = dt_util.utcnow()
 
         calls: list[Call] = []
@@ -290,16 +292,20 @@ class ButterflyMXCallCoordinator(DataUpdateCoordinator[dict[int, Call]]):
         except ButterflyMXError as err:
             raise UpdateFailed(str(err)) from err
 
-        self._since = poll_started - timedelta(seconds=30)
+        # Start the next window slightly before this one ended; see
+        # CALL_POLL_OVERLAP for why.
+        self._since = poll_started - timedelta(seconds=CALL_POLL_OVERLAP)
         data = self._process_calls(calls)
         self._priming = False
         return data
 
     async def async_handle_pushed_call(self, call: Call) -> None:
-        """Feed a call delivered by webhook into the same pipeline."""
-        async with self._push_lock:
-            data = self._process_calls([call])
-            self.async_set_updated_data(data)
+        """Feed a call delivered by webhook into the same pipeline.
+
+        No lock is needed: :meth:`_process_calls` never awaits, so it cannot
+        interleave with a poll running on the same event loop.
+        """
+        self.async_set_updated_data(self._process_calls([call]))
 
     def _process_calls(self, calls: list[Call]) -> dict[int, Call]:
         """Deduplicate, announce and index new calls by tenant."""
@@ -313,7 +319,20 @@ class ButterflyMXCallCoordinator(DataUpdateCoordinator[dict[int, Call]]):
             self._remember(call.id)
             tenant = self._match_tenant(call, topology)
             if tenant is None:
-                _LOGGER.debug("Ignoring call %s: no matching tenant", call.id)
+                # Should not happen: the API only returns calls for buildings
+                # this account has a tenancy in, so one of the three matches in
+                # _match_tenant ought to land.  If it does not, somebody rang a
+                # doorbell and nothing happened, which is worth saying out loud.
+                _LOGGER.warning(
+                    "Ignoring ButterflyMX call %s in building %s: it does not "
+                    "match any known tenant (recipient=%s/%s, unit=%s), so no "
+                    "doorbell was fired",
+                    call.id,
+                    call.building_id,
+                    call.recipient_type,
+                    call.recipient_id,
+                    call.unit_id,
+                )
                 continue
 
             previous = latest.get(tenant.id)
