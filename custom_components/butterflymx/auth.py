@@ -55,13 +55,31 @@ def build_authorize_url(
 
 
 def normalize_token(raw: dict[str, Any]) -> dict[str, Any]:
-    """Add an absolute ``expires_at`` to a raw token response."""
+    """Add an absolute ``expires_at`` to a raw token response.
+
+    ButterflyMX documents ``expires_in`` as 86400.  If it is missing or is not a
+    number the token is treated as already expired, which forces a refresh on
+    first use rather than sending a request that is likely to 401.  That is the
+    safe outcome, but it is unexpected enough to say so in the log.
+    """
     token = dict(raw)
     expires_in = token.get("expires_in")
-    try:
-        lifetime = float(expires_in) if expires_in is not None else 0.0
-    except (TypeError, ValueError):
+    if expires_in is None:
+        _LOGGER.warning(
+            "ButterflyMX token response had no expires_in; treating the access "
+            "token as expired and refreshing before the next request"
+        )
         lifetime = 0.0
+    else:
+        try:
+            lifetime = float(expires_in)
+        except (TypeError, ValueError):
+            _LOGGER.warning(
+                "ButterflyMX returned expires_in=%r, which is not a number; "
+                "treating the access token as expired",
+                expires_in,
+            )
+            lifetime = 0.0
     token["expires_at"] = time.time() + lifetime
     return token
 
@@ -170,9 +188,19 @@ class ButterflyMXAuth:
             await self._async_refresh()
             return str(self._token["access_token"])
 
-    async def async_force_refresh(self) -> str:
-        """Refresh unconditionally, after an unexpected 401."""
+    async def async_force_refresh(self, stale_token: str | None = None) -> str:
+        """Refresh after an unexpected 401.
+
+        Pass the access token that got rejected.  Concurrent requests share one
+        token, so a burst of 401s would otherwise each trigger a full refresh
+        and rotate the refresh token several times over.  If the token already
+        changed while this call waited for the lock, somebody else has fixed it
+        and the replacement is returned as-is.
+        """
         async with self._lock:
+            if stale_token is not None and self._token.get("access_token") != stale_token:
+                _LOGGER.debug("Access token already refreshed by another request")
+                return str(self._token["access_token"])
             await self._async_refresh()
             return str(self._token["access_token"])
 
@@ -183,6 +211,9 @@ class ButterflyMXAuth:
             raise ButterflyMXAuthError("No refresh token stored; re-authorization required")
 
         _LOGGER.debug("Refreshing ButterflyMX access token")
+        # ButterflyMX documents the refresh grant without client_secret, unlike
+        # the authorization_code exchange.  Follow the documentation; if a real
+        # deployment turns out to require it, self._client_secret is still here.
         new_token = await _async_token_request(
             self._session,
             self._accounts_url,
@@ -190,7 +221,6 @@ class ButterflyMXAuth:
                 "grant_type": "refresh_token",
                 "refresh_token": str(refresh_token),
                 "client_id": self._client_id,
-                "client_secret": self._client_secret,
             },
         )
 

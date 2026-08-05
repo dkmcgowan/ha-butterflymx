@@ -162,7 +162,9 @@ class ButterflyMXClient:
                 if not refreshed:
                     refreshed = True
                     _LOGGER.debug("Got 401 on %s %s; forcing a token refresh", method, path)
-                    await self._auth.async_force_refresh()
+                    # Hand back the token that was rejected so parallel requests
+                    # hitting the same 401 do not each rotate the token pair.
+                    await self._auth.async_force_refresh(token)
                     continue
                 raise ButterflyMXAuthError(
                     f"ButterflyMX rejected the access token for {method} {path}"

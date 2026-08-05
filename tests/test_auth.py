@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 
 from homeassistant.core import HomeAssistant
@@ -38,6 +39,19 @@ def test_normalize_token_adds_absolute_expiry() -> None:
     """expires_in is turned into an absolute deadline."""
     token = normalize_token({"access_token": "a", "expires_in": 86400})
     assert token["expires_at"] == pytest.approx(time.time() + 86400, abs=5)
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [{"access_token": "a"}, {"access_token": "a", "expires_in": "soon"}],
+)
+def test_normalize_token_without_usable_expiry_warns(
+    raw: dict, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A missing or unreadable expires_in expires the token and says so."""
+    token = normalize_token(raw)
+    assert token["expires_at"] <= time.time() + 1
+    assert "expired" in caplog.text.lower()
 
 
 async def test_exchange_code(hass: HomeAssistant, aioclient_mock) -> None:
@@ -150,6 +164,77 @@ async def test_revoked_refresh_token_raises_auth_error(
 
     with pytest.raises(ButterflyMXAuthError):
         await auth.async_get_access_token()
+
+
+async def test_refresh_grant_omits_client_secret(
+    hass: HomeAssistant, aioclient_mock
+) -> None:
+    """The refresh grant sends exactly what ButterflyMX documents."""
+    aioclient_mock.post(
+        TOKEN_URL,
+        json={"access_token": "access-2", "refresh_token": "refresh-2", "expires_in": 86400},
+    )
+    auth = ButterflyMXAuth(
+        async_get_clientsession(hass),
+        ACCOUNTS_URL,
+        "cid",
+        "secret",
+        make_token(expires_in=10),
+    )
+
+    await auth.async_get_access_token()
+
+    body = aioclient_mock.mock_calls[0][2]
+    assert body["grant_type"] == "refresh_token"
+    assert body["refresh_token"] == "refresh-1"
+    assert body["client_id"] == "cid"
+    assert "client_secret" not in body
+
+
+async def test_concurrent_forced_refresh_only_refreshes_once(
+    hass: HomeAssistant, aioclient_mock
+) -> None:
+    """Parallel 401s share one refresh instead of rotating the pair repeatedly."""
+    aioclient_mock.post(
+        TOKEN_URL,
+        json={"access_token": "access-2", "refresh_token": "refresh-2", "expires_in": 86400},
+    )
+    auth = ButterflyMXAuth(
+        async_get_clientsession(hass),
+        ACCOUNTS_URL,
+        "cid",
+        "secret",
+        make_token(expires_in=10),
+    )
+
+    results = await asyncio.gather(
+        *(auth.async_force_refresh("access-1") for _ in range(4))
+    )
+
+    assert results == ["access-2"] * 4
+    assert len(aioclient_mock.mock_calls) == 1
+
+
+async def test_forced_refresh_runs_again_for_a_different_token(
+    hass: HomeAssistant, aioclient_mock
+) -> None:
+    """A second, genuinely stale token still triggers its own refresh."""
+    aioclient_mock.post(
+        TOKEN_URL,
+        json={"access_token": "access-2", "refresh_token": "refresh-2", "expires_in": 86400},
+    )
+    auth = ButterflyMXAuth(
+        async_get_clientsession(hass),
+        ACCOUNTS_URL,
+        "cid",
+        "secret",
+        make_token(expires_in=10),
+    )
+
+    await auth.async_force_refresh("access-1")
+    await auth.async_force_refresh("access-2")
+
+    assert len(aioclient_mock.mock_calls) == 2
 
 
 async def test_missing_refresh_token_raises(hass: HomeAssistant) -> None:
