@@ -38,7 +38,7 @@ You need three things:
    you use in their app. The integration only ever acts as you, and can only
    open doors you can already open.
 2. **Home Assistant 2025.2 or newer.**
-3. **API credentials from ButterflyMX** — a client ID and secret.
+3. **API credentials from ButterflyMX**, meaning a client ID and secret.
 
 That third item is the awkward one, and worth being upfront about. ButterflyMX
 issues API credentials through their developer program rather than handing them
