@@ -3,151 +3,122 @@
 [![hacs][hacs-badge]][hacs-url]
 [![Validate][validate-badge]][validate-url]
 
-A [HACS][hacs-url] custom integration that connects Home Assistant to
-[ButterflyMX](https://butterflymx.com) intercoms and access points over the
-ButterflyMX cloud API.
+Use your [ButterflyMX](https://butterflymx.com) intercom from Home Assistant.
 
-It gives you:
+Unlock the front door from a dashboard, your phone, a wall tablet or your watch.
+Get a notification the moment a visitor buzzes your unit, with a photo of who is
+standing there. Build automations around it, like turning the hall light on when
+someone is let in after dark.
 
-- **Locks.** Every access point and unit smart lock your account can open,
-  exposed as standard Home Assistant `lock` entities. `lock.open` and
-  `lock.unlock` both buzz the door.
-- **Doorbell events.** An `event` entity with the `doorbell` device class that
-  fires when a visitor calls your unit, carrying the calling station, the
-  notification type and the snapshot URL.
-- **Snapshot image.** An `image` entity holding the still captured by the
-  intercom on the most recent call.
-- **Last call sensor.** A timestamp sensor with the details of the last call.
-
-> This is an unofficial community integration. It is not built or supported by
-> ButterflyMX.
+> **Unofficial.** This is a community project. It is not built, endorsed or
+> supported by ButterflyMX.
 >
-> Parts of this project were written with the help of Claude Code. It has not
-> yet been tested against a live ButterflyMX account.
+> Parts of it were written with the help of Claude Code. It has not yet been
+> tested against a live ButterflyMX account.
 
-## Requirements
+## What you get
 
-You need ButterflyMX API credentials (a **client ID** and **client secret**).
-ButterflyMX issues these through their developer program, so start at
-<https://apidocs.butterflymx.com/docs/getting-started>. Sandbox credentials
-arrive by email after you sign their developer terms. Production credentials are
-requested separately.
+Once set up, these appear in Home Assistant automatically. You do not configure
+them by hand.
 
-The account you sign in with during setup must be a **resident/tenant** of the
-building whose doors you want to control. The integration only ever acts as that
-tenant.
+| Entity | What it is |
+| --- | --- |
+| `lock.front_entrance` | One for every door you can already open in the ButterflyMX app. Press to buzz it open. |
+| `event.unit_4b_doorbell` | Fires the instant a visitor calls your unit. Use it to trigger notifications. |
+| `image.unit_4b_last_call_snapshot` | The photo the intercom took of your most recent visitor. |
+| `sensor.unit_4b_last_call` | When the last call happened, and who or what it came from. |
 
-## Installation
+Names will match your own building and unit.
 
-### HACS (recommended)
+## Before you start
 
-1. In Home Assistant, go to **HACS → ⋮ → Custom repositories**.
-2. Add `https://github.com/dkmcgowan/ha-butterflymx` with category
+You need three things:
+
+1. **A ButterflyMX account** that is a resident of the building, the same login
+   you use in their app. The integration only ever acts as you, and can only
+   open doors you can already open.
+2. **Home Assistant 2025.2 or newer.**
+3. **API credentials from ButterflyMX** — a client ID and secret.
+
+That third item is the awkward one, and worth being upfront about. ButterflyMX
+issues API credentials through their developer program rather than handing them
+out in the app, so you have to request them at
+<https://apidocs.butterflymx.com/docs/getting-started>. You sign in with your own
+account afterwards, and the integration only ever holds your own access, but
+getting the credentials in the first place is an extra step that has nothing to
+do with Home Assistant.
+
+We have asked ButterflyMX whether this can be simplified so that residents can
+just sign in. If that changes, this section gets shorter and this note goes away.
+
+## Install
+
+### Through HACS
+
+1. In Home Assistant, open **HACS → ⋮ → Custom repositories**.
+2. Paste `https://github.com/dkmcgowan/ha-butterflymx` and choose category
    **Integration**.
 3. Install **ButterflyMX**, then restart Home Assistant.
 4. Go to **Settings → Devices & services → Add integration** and search for
    **ButterflyMX**.
 
-### Manual
+### By hand
 
-Copy `custom_components/butterflymx` into your Home Assistant `config/custom_components`
-directory and restart.
+Copy the `custom_components/butterflymx` folder into your Home Assistant
+`config/custom_components` folder and restart.
 
-## Setup
+## Set it up
 
-The config flow walks through four short steps.
+Four short steps.
 
-1. **Environment.** Production, Sandbox, or a custom ButterflyMX deployment.
+1. **Pick your region.** Choose **Production** unless you were specifically given
+   sandbox credentials for testing.
 
-   | Environment | OAuth host | API host |
-   | --- | --- | --- |
-   | Production | `https://accounts.butterflymx.com` | `https://api.butterflymx.com` |
-   | Sandbox | `https://accounts.na.sandbox.butterflymx.com` | `https://api.na.sandbox.butterflymx.com` |
+2. **Enter your client ID and secret.** Leave the redirect URI alone unless
+   ButterflyMX gave you a custom one.
 
-2. **Credentials.** Your client ID and secret. Leave **Redirect URI** at the
-   default `urn:ietf:wg:oauth:2.0:oob` unless ButterflyMX registered a custom
-   one for your application.
+3. **Sign in to ButterflyMX.** Home Assistant shows you a link. Open it, sign in
+   with your normal ButterflyMX account, and approve access. This happens on
+   ButterflyMX's own site, so your password is never typed into Home Assistant.
 
-3. **Authorize.** Home Assistant shows a ButterflyMX sign-in link. Open it, sign
-   in, and approve access.
+4. **Paste the code back.** ButterflyMX shows you a short authorization code.
+   Copy it into Home Assistant and you are done. If you were sent to a web
+   address instead of shown a code, paste the whole address and the integration
+   will pick the code out of it.
 
-4. **Paste the code.** With the default redirect URI, ButterflyMX displays an
-   authorization code in the browser. Paste it back into Home Assistant. If you
-   have a custom redirect URI you will be sent to that URL instead, in which case
-   paste the whole URL and the integration will pull the `code` out of it.
+The code expires quickly, so do not leave it sitting in the browser.
 
-Authorization codes are single-use and short-lived, so do not leave the browser
-sitting on the code for long.
+Your doors, doorbell and snapshot appear straight away.
 
-### Why paste a code instead of a normal OAuth redirect?
+### Why the copy-and-paste step?
 
-ButterflyMX's documented default redirect URI is the out-of-band value
-`urn:ietf:wg:oauth:2.0:oob`, which displays the code instead of redirecting.
-Home Assistant's built-in OAuth helper always redirects, so this integration
-performs the token exchange itself. That keeps setup working with the standard
-developer credentials, and still supports a registered redirect URI if you have
-one.
+Most integrations bounce you back to Home Assistant automatically after signing
+in. ButterflyMX's standard setup shows you a code on screen instead of
+redirecting anywhere, so there is nothing for Home Assistant to catch. Pasting
+the code does the same job. If ButterflyMX has set up a redirect address for you,
+that works too, and you can paste the whole address instead.
 
-## Tokens and re-authorization
+### Staying signed in
 
-ButterflyMX access tokens are valid for **24 hours**. Refresh tokens do not
-expire. The integration refreshes the access token automatically a few minutes
-before it lapses and writes the rotated token pair back to the config entry.
-ButterflyMX issues a new refresh token on every refresh, so both halves are
-stored.
+You sign in once. The integration keeps your access current on its own, and it
+does not store your password at any point.
 
-If ButterflyMX ever rejects the refresh token, whether because the application
-was revoked, the password changed or the tenancy ended, Home Assistant raises a
-repair notification and starts a re-authentication flow. You link the account
-again, and entities and their history are preserved.
+If it ever loses access, because you changed your password or moved out, Home
+Assistant shows a **Reconfigure** prompt and you sign in again. Your entities,
+automations and history survive that.
 
-## Options
+## Things to do with it
 
-**Settings → Devices & services → ButterflyMX → Configure**
-
-| Option | Default | Notes |
-| --- | --- | --- |
-| Call polling interval | 10 s | How often the call log is checked for new visitor calls. Minimum 5 s. |
-| Show door as unlocked for | 5 s | How long a lock entity reports `unlocked` after a successful release. Cosmetic only; it does not change how long the door stays open. |
-| Webhook push (experimental) | off | See below. |
-
-### Rate limiting
-
-ButterflyMX publishes no rate limits, so the integration errs on the
-conservative side:
-
-- at most 4 requests in flight, spaced at least 250 ms apart;
-- exponential backoff with jitter on `429` and `5xx`, honoring `Retry-After`;
-- topology (buildings, access points, devices) refreshed only once an hour;
-- **door releases are never retried automatically**, since a retry could buzz a
-  door twice, and repeated releases of the same door within 3 seconds are
-  dropped.
-
-If you have many buildings on one account, raise the call polling interval.
-
-### Webhook push (experimental)
-
-If Home Assistant is reachable from the internet, ButterflyMX can push call
-events to it instead of the integration polling. Enabling the option registers a
-Home Assistant webhook and a matching ButterflyMX tenant integration, and removes
-them when the option is turned off or the entry is unloaded.
-
-It is marked experimental because ButterflyMX documents the registration
-endpoints and the general contents of the payload but not an exact schema. The
-parser is forgiving and logs anything it does not recognize at debug level. If
-push does not fire for you, please open an issue with a debug log. Polling keeps
-running regardless.
-
-## Automation example
+**Get a photo of whoever is at the door:**
 
 ```yaml
 automation:
-  - alias: "Announce and show ButterflyMX visitor"
+  - alias: "Someone is at the door"
     triggers:
       - trigger: state
         entity_id: event.unit_4b_doorbell
     actions:
-      - action: notify.mobile_app_pixel
+      - action: notify.mobile_app_my_phone
         data:
           title: "Someone is at {{ trigger.to_state.attributes.device_name }}"
           message: "{{ trigger.to_state.attributes.notification_type }}"
@@ -155,10 +126,7 @@ automation:
             image: "{{ trigger.to_state.attributes.image_url }}"
 ```
 
-An event is also fired on the Home Assistant bus as `butterflymx_call` with the
-same data, if you prefer an event trigger.
-
-To open a door:
+**Open the door from anywhere:**
 
 ```yaml
 actions:
@@ -167,26 +135,67 @@ actions:
       entity_id: lock.front_entrance
 ```
 
-## What this integration does not do
+Both `lock.open` and `lock.unlock` buzz the door. Add the lock to a dashboard, a
+wall tablet by the door, or a voice assistant.
 
-- **User management.** Adding, removing or editing tenants, units, access groups
-  and PINs is out of scope by design. This integration only reads the topology it
-  needs and opens doors.
-- **Live video or two-way audio.** The ButterflyMX REST API does not expose a
-  stream. Real-time video and intercom audio are only available through
-  ButterflyMX's proprietary iOS and Android SDKs, which cannot run inside Home
-  Assistant. The still snapshot from the call log is the closest available
-  substitute, which is why calls surface as an `image` entity rather than a
-  `camera`.
-- **Third-party camera feeds.** The v4 API surfaces no camera or stream
-  endpoints, so there is nothing to expose.
-- **Temporary passcodes and virtual keys.** The API supports them
-  (`/v4/keychains`, `/v4/virtual_keys`) and they may be added later, but they are
-  not implemented yet.
+**Other ideas:** flash a light when someone buzzes while you have music on, log
+every visitor to a calendar, or announce the door on a speaker so you hear it
+away from your phone.
+
+## Settings
+
+**Settings → Devices & services → ButterflyMX → Configure**
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| Call polling interval | 10 seconds | How quickly a visitor call reaches you. Lower is faster and makes more requests. |
+| Show door as unlocked for | 5 seconds | How long the lock shows as unlocked afterwards. Cosmetic; it does not change how long the door stays open. |
+| Webhook push | Off | Advanced. If your Home Assistant is reachable from the internet, ButterflyMX can notify it instantly instead of Home Assistant checking every few seconds. Experimental. |
+
+## Questions
+
+**Can it see or do anything I cannot?**
+No. It signs in as you and is limited to exactly what your account can already
+do: the doors you can open, and calls to your own unit.
+
+**Does it manage residents, keys or accounts?**
+No, and that is deliberate. It does not add or remove residents, units, access
+groups or key fobs. It opens doors and tells you when someone is at one. Anything
+administrative belongs in ButterflyMX's own tools.
+
+**Do I need to expose Home Assistant to the internet?**
+No. It checks for new calls on a timer by default and works entirely from inside
+your network. Exposing Home Assistant is only needed for the optional webhook
+setting.
+
+**Why is there no live video or intercom audio?**
+ButterflyMX only offers those through their own phone apps, using technology that
+cannot run inside Home Assistant. There is no way around it. The still photo from
+each call is the closest available, which is why you get an image rather than a
+camera. Keep using the ButterflyMX app when you want to see and talk to a
+visitor, and use this to unlock the door and to build automations around it.
+
+**What about the cameras I see in the ButterflyMX app?**
+Same answer: not available outside their apps. If those are ordinary security
+cameras on your own network, Home Assistant can usually connect to them directly,
+which works far better than going through ButterflyMX anyway.
+
+**Can I create visitor or delivery codes?**
+Not yet. It is planned.
+
+**Will it work in my building?**
+If ButterflyMX is installed and you are a resident with an account, yes.
 
 ## Troubleshooting
 
-Enable debug logging:
+**The doorbell is slow.** Lower the polling interval in the settings above.
+
+**Doors are missing.** Only doors your ButterflyMX account can open appear. If
+you cannot open a door in their app, it will not show up here.
+
+**Something is broken.** Turn on detailed logging, reproduce the problem, then
+[open an issue](https://github.com/dkmcgowan/ha-butterflymx/issues) with what the
+log says:
 
 ```yaml
 logger:
@@ -195,12 +204,17 @@ logger:
     custom_components.butterflymx: debug
 ```
 
-Diagnostics can be downloaded from the integration page. Credentials, tokens and
-personal details are redacted.
+The integration page also has a **Download diagnostics** button. It is safe to
+attach to an issue; passwords, tokens and personal details are removed
+automatically.
 
-## Development
+---
 
-### Unit tests
+## For developers
+
+Everything below is only relevant if you want to work on the integration itself.
+
+### Running the tests
 
 ```bash
 pip install -r requirements-dev.txt
@@ -208,35 +222,38 @@ ruff check custom_components tests scripts
 pytest
 ```
 
-The suite runs against the Home Assistant test harness and needs Linux or macOS.
-Home Assistant imports `fcntl`, so it cannot run on Windows. CI runs it on every
-push.
+The suite uses the Home Assistant test harness, which needs Linux or macOS.
+Home Assistant imports `fcntl`, so it will not run on Windows. CI runs it on
+every push.
 
-### Probing the real API
+### Checking the API by hand
 
-`scripts/probe_api.py` is a standalone tool that walks the OAuth flow once and
-reports what a live account actually returns: which endpoints a resident is
-allowed to call, what values appear in call payloads, and whether snapshot URLs
-are pre-signed. It uses only the standard library, so no virtualenv is needed.
-Use it to check assumptions before deploying, and to capture real payloads for
-test fixtures.
+`scripts/probe_api.py` signs in once and reports what a live account actually
+returns: which endpoints a resident may call, what values appear in call
+payloads, whether snapshot URLs are pre-signed, and the shape of access logs,
+schedules, passes and PINs. Standard library only, so no virtualenv is needed.
 
 ```bash
 export BMX_CLIENT_ID=... BMX_CLIENT_SECRET=...
 python scripts/probe_api.py --env sandbox
 ```
 
-It caches the token in `scripts/.bmx-token-<env>.json` and writes a redacted
-transcript to `scripts/probe-output-<env>.json`. Both are gitignored. Names,
-emails, serial numbers and URL signatures are stripped before anything is
+Every request it makes is a `GET`; it never creates anything or opens a door. It
+caches the token in `scripts/.bmx-token-<env>.json` and writes a redacted
+transcript to `scripts/probe-output-<env>.json`. Both are gitignored, and names,
+emails, PINs, pass codes and URL signatures are stripped before anything is
 written, so the transcript is safe to attach to an issue.
 
-### Deploying to a Home Assistant instance
+Sandbox credentials are requested separately from production ones. Test against
+sandbox first: door releases are real, and a mistake pointed at production opens
+an actual door.
+
+### Deploying to a test instance
 
 `scripts/deploy.sh` copies the integration over SSH and restarts Home Assistant
 Core. It needs the **Advanced SSH & Web Terminal** add-on with key
-authentication. It uses only `ssh` and `tar`, so it works from Git Bash on
-Windows too.
+authentication, and uses only `ssh` and `tar`, so it works from Git Bash on
+Windows.
 
 ```bash
 echo 'HAOS_HOST=homeassistant.local' > scripts/.env.deploy
@@ -245,11 +262,22 @@ scripts/deploy.sh --logs       # copy, restart, then follow the log
 scripts/deploy.sh --no-restart # copy only
 ```
 
-A restart is required for Python changes, because reloading a config entry
-re-runs setup but does not re-import changed modules.
+A restart is needed for Python changes, because reloading a config entry re-runs
+setup without re-importing changed modules.
 
-Test against **sandbox credentials first**. Door releases are real, and a mistake
-while pointed at production buzzes an actual door.
+### How it talks to ButterflyMX
+
+Access tokens last 24 hours and refresh tokens do not expire. The integration
+refreshes a few minutes before expiry and stores the rotated pair, since
+ButterflyMX issues a new refresh token every time. A rejected refresh raises a
+re-authentication flow.
+
+ButterflyMX publishes no rate limits, so the client stays well inside any
+plausible one: at most 4 requests in flight spaced 250 ms apart, exponential
+backoff with jitter on `429` and `5xx` honoring `Retry-After`, and building
+topology refreshed hourly. Door releases are never retried, because a retry could
+open a door twice, and repeated releases of the same door within 3 seconds are
+dropped.
 
 Issues and pull requests are welcome.
 
