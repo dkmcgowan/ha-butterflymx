@@ -56,14 +56,22 @@ class _Throttler:
     async def acquire(self) -> None:
         """Wait until it is polite to send the next request."""
         await self._semaphore.acquire()
-        async with self._spacing_lock:
-            loop = asyncio.get_running_loop()
-            now = loop.time()
-            wait = self._next_slot - now
-            if wait > 0:
-                await asyncio.sleep(wait)
+        try:
+            async with self._spacing_lock:
+                loop = asyncio.get_running_loop()
                 now = loop.time()
-            self._next_slot = now + self._min_interval
+                wait = self._next_slot - now
+                if wait > 0:
+                    await asyncio.sleep(wait)
+                    now = loop.time()
+                self._next_slot = now + self._min_interval
+        except BaseException:
+            # The slot is only handed back by __aexit__, which never runs if
+            # __aenter__ raises.  Cancellation while waiting here would
+            # otherwise retire a slot permanently, and losing all of them
+            # deadlocks every later request.
+            self._semaphore.release()
+            raise
 
     def release(self) -> None:
         """Release the concurrency slot."""

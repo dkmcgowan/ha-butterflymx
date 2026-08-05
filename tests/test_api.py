@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 import pytest
@@ -9,7 +11,7 @@ from pytest_homeassistant_custom_component.test_util.aiohttp import (
     AiohttpClientMockResponse,
 )
 
-from custom_components.butterflymx.api import ButterflyMXClient
+from custom_components.butterflymx.api import ButterflyMXClient, _Throttler
 from custom_components.butterflymx.auth import ButterflyMXAuth
 from custom_components.butterflymx.exceptions import (
     ButterflyMXAuthError,
@@ -68,6 +70,23 @@ async def test_pagination_follows_next_page(hass: HomeAssistant, aioclient_mock)
 
     devices = await _client(hass).async_get_devices(BUILDING_ID)
     assert [device.id for device in devices] == [5005, 2002]
+
+
+async def test_throttler_returns_its_slot_when_cancelled() -> None:
+    """A cancelled acquire must not retire a concurrency slot for good."""
+    throttle = _Throttler(max_concurrent=2, min_interval=5.0)
+    async with throttle:
+        pass
+
+    task = asyncio.create_task(throttle.acquire())
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    # Both slots must still be available, or later requests wait forever.
+    await asyncio.wait_for(throttle.acquire(), timeout=6)
+    await asyncio.wait_for(throttle.acquire(), timeout=6)
 
 
 async def test_authorization_header_is_sent(hass: HomeAssistant, aioclient_mock) -> None:
