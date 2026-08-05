@@ -6,6 +6,12 @@ models the door as locked at rest, briefly reports ``unlocked`` after a
 successful release, and returns to ``locked`` once the strike has re-engaged.
 ``assumed_state`` is set so the UI shows discrete open/close controls rather
 than a toggle that pretends to know the truth.
+
+``is_open`` is deliberately never reported.  Releasing the strike makes a door
+openable, but whether anyone actually pushed it is not something this API can
+tell us, so claiming it would be a guess dressed up as a reading.  Unlock and
+open therefore send the same request and report the same state; both exist only
+so the UI can offer either control.
 """
 
 from __future__ import annotations
@@ -37,6 +43,7 @@ async def async_setup_entry(
     """Set up ButterflyMX locks and keep them in sync with the topology."""
     runtime = entry.runtime_data
     coordinator = runtime.topology
+    created: set[str] = set()
 
     @callback
     def _async_add_new_locks() -> None:
@@ -45,9 +52,9 @@ async def async_setup_entry(
             return
         new_entities = []
         for target in build_lock_targets(topology):
-            if target.unique_key in runtime.known_lock_keys:
+            if target.unique_key in created:
                 continue
-            runtime.known_lock_keys.add(target.unique_key)
+            created.add(target.unique_key)
             building_name = _building_name(topology, target.building_id)
             new_entities.append(
                 ButterflyMXLock(coordinator, target, building_name, runtime.relock_delay)
@@ -87,7 +94,6 @@ class ButterflyMXLock(ButterflyMXTopologyEntity, LockEntity):
         self._attr_device_info = door_device_info(target, building_name)
         self._attr_is_locked = True
         self._attr_is_unlocking = False
-        self._attr_is_open = False
         self._relock_task: asyncio.Task[None] | None = None
         self._release_lock = asyncio.Lock()
         self._last_release: float = 0.0
@@ -109,17 +115,18 @@ class ButterflyMXLock(ButterflyMXTopologyEntity, LockEntity):
 
     async def async_unlock(self, **kwargs: Any) -> None:
         """Buzz the door open."""
-        await self._async_release(open_latch=False)
+        await self._async_release()
 
     async def async_open(self, **kwargs: Any) -> None:
         """Buzz the door open.
 
-        Identical API call to unlocking; only the reported state differs, so
-        automations can tell the two intents apart.
+        The same request as unlocking, reported the same way, because it is the
+        same thing happening to the door.  Both exist so the UI can offer either
+        control.
         """
-        await self._async_release(open_latch=True)
+        await self._async_release()
 
-    async def _async_release(self, open_latch: bool) -> None:
+    async def _async_release(self) -> None:
         """Send a door release request, guarding against double-fires."""
         async with self._release_lock:
             loop = asyncio.get_running_loop()
@@ -150,7 +157,6 @@ class ButterflyMXLock(ButterflyMXTopologyEntity, LockEntity):
             self._last_release = loop.time()
             self._attr_is_unlocking = False
             self._attr_is_locked = False
-            self._attr_is_open = open_latch
             self.async_write_ha_state()
             self._schedule_relock()
 
@@ -159,10 +165,9 @@ class ButterflyMXLock(ButterflyMXTopologyEntity, LockEntity):
         self._cancel_relock()
 
         async def _relock() -> None:
-            try:
-                await asyncio.sleep(self._relock_delay)
-            except asyncio.CancelledError:
-                return
+            # A cancelled timer means a newer release replaced this one, so let
+            # the cancellation propagate rather than reporting the door locked.
+            await asyncio.sleep(self._relock_delay)
             self._set_locked()
 
         self._relock_task = self.hass.async_create_task(
@@ -179,10 +184,8 @@ class ButterflyMXLock(ButterflyMXTopologyEntity, LockEntity):
     def _set_locked(self) -> None:
         """Reset the entity to its resting state."""
         self._attr_is_unlocking = False
-        self._attr_is_open = False
         self._attr_is_locked = True
-        if getattr(self, "hass", None) is not None:
-            self.async_write_ha_state()
+        self.async_write_ha_state()
 
     async def async_will_remove_from_hass(self) -> None:
         """Cancel timers when the entity goes away."""

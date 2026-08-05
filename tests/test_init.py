@@ -13,7 +13,11 @@ from homeassistant.const import ATTR_ENTITY_ID
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.butterflymx.const import CONF_TOKEN, EVENT_CALL
+from custom_components.butterflymx.const import (
+    CONF_RELOCK_DELAY,
+    CONF_TOKEN,
+    EVENT_CALL,
+)
 
 from .conftest import (
     ACCESS_POINTS_RESPONSE,
@@ -85,6 +89,59 @@ async def test_unlock_releases_the_door(
         "door_release_request": {"tenant_id": TENANT_ID, "access_point_id": 1001}
     }
     assert hass.states.get(LOCK_ENTITY).state == LockState.UNLOCKED
+
+
+async def test_open_and_unlock_report_the_same_state(
+    hass: HomeAssistant, mock_topology, config_entry: MockConfigEntry
+) -> None:
+    """Both release the strike, so neither may claim the door is open.
+
+    Whether anyone actually pushed the door is not something the API reports,
+    so ``is_open`` is never set and both actions land on ``unlocked``.
+    """
+    mock_topology.post(
+        f"{API_URL}/v4/door_release_requests", status=201, json={"data": {"id": 1}}
+    )
+    await _setup(hass, config_entry)
+
+    # Two different doors, so the per-door release cooldown cannot quietly
+    # swallow the second call and make this pass for the wrong reason.
+    await hass.services.async_call(
+        LOCK_DOMAIN, SERVICE_OPEN, {ATTR_ENTITY_ID: LOCK_ENTITY}, blocking=True
+    )
+    await hass.services.async_call(
+        LOCK_DOMAIN, SERVICE_UNLOCK, {ATTR_ENTITY_ID: SMART_LOCK_ENTITY}, blocking=True
+    )
+
+    assert hass.states.get(LOCK_ENTITY).state == LockState.UNLOCKED
+    assert hass.states.get(SMART_LOCK_ENTITY).state == LockState.UNLOCKED
+
+
+async def test_the_door_returns_to_locked_on_its_own(
+    hass: HomeAssistant, mock_topology, config_entry: MockConfigEntry
+) -> None:
+    """A released door must go back to locked without anything asking it to.
+
+    Building doors are self-closing: the strike buzzes, someone pushes, the door
+    shuts and latches again. Nothing reports that back, so the entity has to
+    return to locked by itself or it would sit there claiming to be unlocked and
+    the next release would look like a no-op.
+    """
+    mock_topology.post(
+        f"{API_URL}/v4/door_release_requests", status=201, json={"data": {"id": 1}}
+    )
+    # Relock immediately instead of waiting out the real delay.
+    config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(config_entry, options={CONF_RELOCK_DELAY: 0})
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    await hass.services.async_call(
+        LOCK_DOMAIN, SERVICE_UNLOCK, {ATTR_ENTITY_ID: LOCK_ENTITY}, blocking=True
+    )
+    await hass.async_block_till_done()
+
+    assert hass.states.get(LOCK_ENTITY).state == LockState.LOCKED
 
 
 async def test_open_uses_device_id_for_unit_lock(
