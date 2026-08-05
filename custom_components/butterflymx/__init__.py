@@ -9,7 +9,6 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import ButterflyMXClient
@@ -27,7 +26,6 @@ from .const import (
     DEFAULT_RELOCK_DELAY,
 )
 from .coordinator import ButterflyMXCallCoordinator, ButterflyMXTopologyCoordinator
-from .exceptions import ButterflyMXAuthError, ButterflyMXConnectionError
 from .webhook import ButterflyMXWebhookManager
 
 _LOGGER = logging.getLogger(__name__)
@@ -75,17 +73,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ButterflyMXConfigEntry) 
     )
     client = ButterflyMXClient(session, entry.data[CONF_API_URL], auth)
 
+    # No try/except: the coordinator converts its own failures into
+    # ConfigEntryAuthFailed or ConfigEntryNotReady, which is what Home Assistant
+    # wants to see here.
     topology = ButterflyMXTopologyCoordinator(hass, entry, client)
-    try:
-        await topology.async_config_entry_first_refresh()
-    except ConfigEntryAuthFailed:
-        raise
-    except ConfigEntryNotReady:
-        raise
-    except ButterflyMXAuthError as err:
-        raise ConfigEntryAuthFailed(str(err)) from err
-    except ButterflyMXConnectionError as err:
-        raise ConfigEntryNotReady(str(err)) from err
+    await topology.async_config_entry_first_refresh()
 
     scan_interval = entry.options.get(CONF_CALL_SCAN_INTERVAL, DEFAULT_CALL_SCAN_INTERVAL)
     calls = ButterflyMXCallCoordinator(hass, entry, client, topology, scan_interval)
@@ -129,9 +121,13 @@ async def _async_options_updated(
 ) -> None:
     """Reload the entry when the user changes options.
 
-    This listener also fires when a refreshed OAuth token is written back to the
-    entry, so compare against the options we set up with instead of reloading on
-    every entry update.
+    Entry updates are not always option changes, and reloading on all of them
+    would be wrong twice over.  A refreshed OAuth token is written back to the
+    entry roughly once a day.  More sharply, tearing down the webhook writes to
+    the entry during unload, and this listener is still attached at that point
+    because async_on_unload callbacks do not run until async_unload_entry has
+    returned -- so an unconditional reload would schedule a reload of the entry
+    being unloaded.  Comparing against the options we started with avoids both.
     """
     runtime: ButterflyMXRuntimeData | None = getattr(entry, "runtime_data", None)
     if runtime is not None and dict(entry.options) == runtime.options_snapshot:
