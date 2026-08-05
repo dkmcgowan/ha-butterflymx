@@ -12,14 +12,13 @@ import logging
 from homeassistant.components.image import ImageEntity
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
 from . import ButterflyMXConfigEntry
 from .const import DOMAIN
 from .coordinator import ButterflyMXCallCoordinator
-from .entity import unit_device_info
-from .models import Call, Tenant
+from .entity import ButterflyMXCallEntity
+from .models import Tenant
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -56,12 +55,9 @@ async def async_setup_entry(
     entry.async_on_unload(topology_coordinator.async_add_listener(_async_add_new_entities))
 
 
-class ButterflyMXCallSnapshot(
-    CoordinatorEntity[ButterflyMXCallCoordinator], ImageEntity
-):
+class ButterflyMXCallSnapshot(ButterflyMXCallEntity, ImageEntity):
     """Still image captured by the intercom on the most recent call."""
 
-    _attr_has_entity_name = True
     _attr_translation_key = "last_call_snapshot"
 
     def __init__(
@@ -71,19 +67,14 @@ class ButterflyMXCallSnapshot(
         tenant: Tenant,
     ) -> None:
         """Initialize the snapshot entity."""
-        CoordinatorEntity.__init__(self, coordinator)
+        # ImageEntity needs hass at construction time, so both parents are
+        # initialized explicitly rather than through a single super() call.
+        ButterflyMXCallEntity.__init__(self, coordinator, tenant)
         ImageEntity.__init__(self, hass)
-        self._tenant = tenant
         self._attr_unique_id = f"{DOMAIN}_tenant_{tenant.id}_last_call_snapshot"
-        self._attr_device_info = unit_device_info(tenant)
         self._cached_url: str | None = None
         self._cached_image: bytes | None = None
         self._apply_latest_call()
-
-    @property
-    def _latest_call(self) -> Call | None:
-        """Return the most recent call seen for this tenancy."""
-        return (self.coordinator.data or {}).get(self._tenant.id)
 
     @callback
     def _apply_latest_call(self) -> None:

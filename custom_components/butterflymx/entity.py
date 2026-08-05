@@ -54,10 +54,6 @@ class ButterflyMXTopologyEntity(CoordinatorEntity[ButterflyMXTopologyCoordinator
 
     _attr_has_entity_name = True
 
-    def __init__(self, coordinator: ButterflyMXTopologyCoordinator) -> None:
-        """Initialize the entity."""
-        super().__init__(coordinator)
-
 
 class ButterflyMXCallEntity(CoordinatorEntity[ButterflyMXCallCoordinator]):
     """Base entity for things derived from the call log."""

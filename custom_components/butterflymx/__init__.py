@@ -50,8 +50,6 @@ class ButterflyMXRuntimeData:
     relock_delay: int
     options_snapshot: dict[str, Any] = field(default_factory=dict)
     webhook: ButterflyMXWebhookManager | None = None
-    known_lock_keys: set[str] = field(default_factory=set)
-    known_tenant_ids: set[int] = field(default_factory=set)
 
 
 type ButterflyMXConfigEntry = ConfigEntry[ButterflyMXRuntimeData]

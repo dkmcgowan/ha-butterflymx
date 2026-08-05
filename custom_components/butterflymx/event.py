@@ -28,19 +28,19 @@ async def async_setup_entry(
     """Set up a doorbell event entity per tenancy."""
     runtime = entry.runtime_data
     topology_coordinator = runtime.topology
+    created: set[int] = set()
 
     @callback
     def _async_add_new_entities() -> None:
         topology = topology_coordinator.data
         if topology is None:
             return
-        new_entities = [
-            ButterflyMXDoorbellEvent(runtime.calls, tenant)
-            for tenant in topology.tenants
-            if tenant.id not in runtime.known_tenant_ids
-        ]
+        new_entities = []
         for tenant in topology.tenants:
-            runtime.known_tenant_ids.add(tenant.id)
+            if tenant.id in created:
+                continue
+            created.add(tenant.id)
+            new_entities.append(ButterflyMXDoorbellEvent(runtime.calls, tenant))
         if new_entities:
             async_add_entities(new_entities)
 
@@ -79,4 +79,11 @@ class ButterflyMXDoorbellEvent(ButterflyMXCallEntity, EventEntity):
 
     @callback
     def _handle_coordinator_update(self) -> None:
-        """Ignore coordinator refreshes; events come from the listener."""
+        """Write state on a refresh without treating it as a new event.
+
+        The doorbell itself is fired by the call listener, not by polling, so
+        the base implementation's behavior is not wanted here.  State still has
+        to be written, or a coordinator that starts failing would leave this
+        entity looking available while every other entity goes unavailable.
+        """
+        self.async_write_ha_state()
