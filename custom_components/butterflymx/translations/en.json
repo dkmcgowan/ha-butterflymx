@@ -8,14 +8,6 @@
           "environment": "Environment"
         }
       },
-      "endpoints": {
-        "title": "Custom endpoints",
-        "description": "Enter the hostnames for your dedicated ButterflyMX environment.",
-        "data": {
-          "accounts_url": "Accounts (OAuth) URL",
-          "api_url": "API URL"
-        }
-      },
       "credentials": {
         "title": "API credentials",
         "description": "Enter the client ID and secret ButterflyMX issued to you. Leave the redirect URI at its default unless ButterflyMX registered a custom one for your application.",
@@ -41,7 +33,6 @@
       "cannot_connect": "Could not reach ButterflyMX. Check your network and the endpoint URLs.",
       "invalid_auth": "ButterflyMX rejected these credentials or this authorization code.",
       "invalid_auth_code": "That does not look like an authorization code.",
-      "invalid_url": "Enter full URLs including https://",
       "unknown": "Unexpected error. Check the Home Assistant log for details."
     },
     "abort": {
@@ -67,8 +58,7 @@
     "environment": {
       "options": {
         "production": "Production",
-        "sandbox": "Sandbox",
-        "custom": "Custom / dedicated environment"
+        "sandbox": "Sandbox"
       }
     }
   },

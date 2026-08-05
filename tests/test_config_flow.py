@@ -10,7 +10,6 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.butterflymx.config_flow import extract_code
 from custom_components.butterflymx.const import (
-    CONF_ACCOUNTS_URL,
     CONF_API_URL,
     CONF_AUTH_CODE,
     CONF_CLIENT_ID,
@@ -19,7 +18,6 @@ from custom_components.butterflymx.const import (
     CONF_REDIRECT_URI,
     CONF_TOKEN,
     DOMAIN,
-    ENV_CUSTOM,
     ENV_SANDBOX,
     OOB_REDIRECT_URI,
 )
@@ -148,25 +146,6 @@ async def test_flow_cannot_connect(hass: HomeAssistant, aioclient_mock) -> None:
     )
 
     assert result["errors"] == {"base": "cannot_connect"}
-
-
-async def test_custom_environment(hass: HomeAssistant, aioclient_mock) -> None:
-    """A dedicated deployment can supply its own hostnames."""
-    aioclient_mock.post(TOKEN_URL, json=TOKEN_RESPONSE)
-    aioclient_mock.get(f"{API_URL}/v4/tenants", json=TENANTS_RESPONSE)
-
-    result = await _start_flow(hass, ENV_CUSTOM)
-    assert result["step_id"] == "endpoints"
-
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {CONF_ACCOUNTS_URL: "not-a-url", CONF_API_URL: API_URL}
-    )
-    assert result["errors"] == {"base": "invalid_url"}
-
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {CONF_ACCOUNTS_URL: ACCOUNTS_URL, CONF_API_URL: API_URL}
-    )
-    assert result["step_id"] == "credentials"
 
 
 async def test_duplicate_account_aborts(

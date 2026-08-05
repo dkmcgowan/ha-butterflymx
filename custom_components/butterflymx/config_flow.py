@@ -44,7 +44,6 @@ from .const import (
     DEFAULT_CALL_SCAN_INTERVAL,
     DEFAULT_RELOCK_DELAY,
     DOMAIN,
-    ENV_CUSTOM,
     ENV_PRODUCTION,
     ENV_SANDBOX,
     ENVIRONMENTS,
@@ -103,8 +102,6 @@ class ButterflyMXConfigFlow(ConfigFlow, domain=DOMAIN):
         """Pick which ButterflyMX environment to talk to."""
         if user_input is not None:
             self._environment = user_input[CONF_ENVIRONMENT]
-            if self._environment == ENV_CUSTOM:
-                return await self.async_step_endpoints()
             urls = ENVIRONMENTS[self._environment]
             self._accounts_url = urls[CONF_ACCOUNTS_URL]
             self._api_url = urls[CONF_API_URL]
@@ -114,7 +111,7 @@ class ButterflyMXConfigFlow(ConfigFlow, domain=DOMAIN):
             {
                 vol.Required(CONF_ENVIRONMENT, default=ENV_PRODUCTION): selector.SelectSelector(
                     selector.SelectSelectorConfig(
-                        options=[ENV_PRODUCTION, ENV_SANDBOX, ENV_CUSTOM],
+                        options=[ENV_PRODUCTION, ENV_SANDBOX],
                         translation_key="environment",
                         mode=selector.SelectSelectorMode.DROPDOWN,
                     )
@@ -122,41 +119,6 @@ class ButterflyMXConfigFlow(ConfigFlow, domain=DOMAIN):
             }
         )
         return self.async_show_form(step_id="user", data_schema=schema)
-
-    async def async_step_endpoints(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Collect custom accounts/API hostnames."""
-        errors: dict[str, str] = {}
-        if user_input is not None:
-            accounts_url = user_input[CONF_ACCOUNTS_URL].strip().rstrip("/")
-            api_url = user_input[CONF_API_URL].strip().rstrip("/")
-            if not accounts_url.startswith("http") or not api_url.startswith("http"):
-                errors["base"] = "invalid_url"
-            else:
-                self._accounts_url = accounts_url
-                self._api_url = api_url
-                return await self.async_step_credentials()
-
-        schema = vol.Schema(
-            {
-                vol.Required(
-                    CONF_ACCOUNTS_URL,
-                    default=user_input.get(CONF_ACCOUNTS_URL, self._accounts_url)
-                    if user_input
-                    else self._accounts_url,
-                ): str,
-                vol.Required(
-                    CONF_API_URL,
-                    default=user_input.get(CONF_API_URL, self._api_url)
-                    if user_input
-                    else self._api_url,
-                ): str,
-            }
-        )
-        return self.async_show_form(
-            step_id="endpoints", data_schema=schema, errors=errors
-        )
 
     async def async_step_credentials(
         self, user_input: dict[str, Any] | None = None

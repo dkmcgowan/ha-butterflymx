@@ -29,7 +29,6 @@ CONF_WEBHOOK_INTEGRATION_IDS: Final = "webhook_integration_ids"
 
 ENV_PRODUCTION: Final = "production"
 ENV_SANDBOX: Final = "sandbox"
-ENV_CUSTOM: Final = "custom"
 
 # The OAuth2 authorization server is a separate host from the REST API.
 ENVIRONMENTS: Final[dict[str, dict[str, str]]] = {
