@@ -165,10 +165,29 @@ class ButterflyMXTopologyCoordinator(DataUpdateCoordinator[ButterflyMXTopology])
 
             access_points: list[AccessPoint] = []
             devices: list[Device] = []
-            for building_id in distinct_building_ids(tenants):
-                access_points.extend(
-                    await self.client.async_get_access_points(building_id)
-                )
+            building_ids = distinct_building_ids(tenants)
+            unreachable: list[int] = []
+
+            # Buildings are independent.  One of them failing must not take the
+            # others down with it: an account can span several buildings, and a
+            # problem with one is no reason to lose the doors in the rest.
+            for building_id in building_ids:
+                try:
+                    access_points.extend(
+                        await self.client.async_get_access_points(building_id)
+                    )
+                except ButterflyMXAuthError:
+                    raise
+                except ButterflyMXError as err:
+                    unreachable.append(building_id)
+                    _LOGGER.warning(
+                        "Could not list access points for building %s: %s. Its "
+                        "doors are unavailable until the next refresh; other "
+                        "buildings are unaffected",
+                        building_id,
+                        err,
+                    )
+
                 try:
                     devices.extend(await self.client.async_get_devices(building_id))
                 except ButterflyMXAuthError:
@@ -178,6 +197,15 @@ class ButterflyMXTopologyCoordinator(DataUpdateCoordinator[ButterflyMXTopology])
                     _LOGGER.debug(
                         "Could not list devices for building %s: %s", building_id, err
                     )
+
+            if unreachable and len(unreachable) == len(building_ids):
+                # Nothing came back at all, so this is a general failure rather
+                # than one bad building.  Fail the refresh and keep the previous
+                # topology instead of reporting that every door has gone away.
+                raise UpdateFailed(
+                    f"Could not list access points for any building "
+                    f"({', '.join(str(b) for b in unreachable)})"
+                )
         except ButterflyMXAuthError as err:
             raise ConfigEntryAuthFailed(str(err)) from err
         except ButterflyMXConnectionError as err:
