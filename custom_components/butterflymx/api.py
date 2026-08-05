@@ -1,10 +1,17 @@
 """Async client for the ButterflyMX v4 REST API.
 
-ButterflyMX publishes no rate limits, so this client stays well inside any
-plausible one: it caps concurrency, spaces requests out, retries only idempotent
-calls, and honors ``Retry-After`` when the server pushes back.  Door releases
-are never retried, because firing a door twice after a slow response is worse
-than failing.
+ButterflyMX documents no rate limits, so the throttling here is a house rule
+rather than a published requirement: cap concurrency, space requests out, retry
+only idempotent calls, and honor ``Retry-After`` when the server pushes back.
+The point is not to guess their limit but to make sure a bug on our side cannot
+turn into a request flood -- a client that hammers an endpoint after an auth
+failure is how credentials get blocked.  Door releases are never retried,
+because firing a door twice after a slow response is worse than failing.
+
+Note that ``MIN_REQUEST_INTERVAL`` is the real limiter, not
+``MAX_CONCURRENT_REQUESTS``: request starts are serialized, so the ceiling is
+one request per interval no matter how many slots are free.  Both values are
+guesses pending an answer from ButterflyMX about acceptable polling rates.
 """
 
 from __future__ import annotations
@@ -12,6 +19,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Mapping
 from datetime import datetime
+from json import loads as json_loads
 import logging
 import random
 from typing import Any
@@ -167,12 +175,19 @@ class ButterflyMXClient:
             if response.status == 401:
                 # The token may have been revoked early; try exactly one forced
                 # refresh before giving up and asking the user to re-link.
+                #
+                # This runs even when retries are disabled, and that is safe: a
+                # 401 means the request was rejected outright, so a door release
+                # that lands here did not open anything and can be sent again.
                 if not refreshed:
                     refreshed = True
                     _LOGGER.debug("Got 401 on %s %s; forcing a token refresh", method, path)
                     # Hand back the token that was rejected so parallel requests
                     # hitting the same 401 do not each rotate the token pair.
                     await self._auth.async_force_refresh(token)
+                    # Renewing a token is not a failed attempt, so it does not
+                    # spend one of the retries meant for transient errors.
+                    attempt -= 1
                     continue
                 raise ButterflyMXAuthError(
                     f"ButterflyMX rejected the access token for {method} {path}"
@@ -202,7 +217,10 @@ class ButterflyMXClient:
             if not body:
                 return None
             try:
-                return await response.json(content_type=None)
+                # Parse the bytes already read above rather than calling
+                # response.json(), which would only work because aiohttp
+                # happens to cache the body.
+                return json_loads(body)
             except ValueError as err:
                 raise ButterflyMXResponseError(
                     f"ButterflyMX returned a non-JSON body for {method} {path}"
@@ -219,26 +237,65 @@ class ButterflyMXClient:
         await asyncio.sleep(delay)
 
     async def _async_get_paginated(
-        self, path: str, params: Mapping[str, Any] | None = None, max_pages: int = 20
+        self, path: str, params: Mapping[str, Any] | None = None
     ) -> list[dict[str, Any]]:
-        """Follow ``page_info`` until the API runs out of pages."""
+        """Collect every page of a list endpoint.
+
+        Every list response carries ``page_info``, and ``next_page`` is null on
+        the last one.  That is the whole termination condition; there is no
+        arbitrary page cap, because a cap can only ever return a silently
+        incomplete answer.  The one thing that would not terminate is a
+        ``next_page`` that fails to advance, which would mean a broken response,
+        so that is reported rather than followed.
+        """
         collected: list[dict[str, Any]] = []
         page = 1
-        while page <= max_pages:
+        while True:
             query: dict[str, Any] = dict(params or {})
             query["page"] = page
             query["per"] = PAGE_SIZE
             payload = await self._async_request("GET", path, params=query)
             if not isinstance(payload, dict):
+                _LOGGER.warning(
+                    "ButterflyMX returned a non-object body for GET %s page %s; "
+                    "stopping after %d records",
+                    path,
+                    page,
+                    len(collected),
+                )
                 break
+
             data = payload.get("data")
             if isinstance(data, list):
                 collected.extend(item for item in data if isinstance(item, dict))
+
             page_info = payload.get("page_info") or {}
-            next_page = page_info.get("next_page")
-            if not next_page:
+            raw_next = page_info.get("next_page")
+            if raw_next is None:
                 break
-            page = int(next_page)
+            try:
+                next_page = int(raw_next)
+            except (TypeError, ValueError):
+                _LOGGER.warning(
+                    "ButterflyMX returned next_page=%r for GET %s, which is not "
+                    "a page number; stopping after %d records",
+                    raw_next,
+                    path,
+                    len(collected),
+                )
+                break
+            if next_page <= page:
+                _LOGGER.warning(
+                    "ButterflyMX said page %s of GET %s is followed by page %s, "
+                    "which does not move forward; stopping after %d records",
+                    page,
+                    path,
+                    next_page,
+                    len(collected),
+                )
+                break
+            page = next_page
+
         return collected
 
     # -- Topology -------------------------------------------------------------
@@ -331,24 +388,29 @@ class ButterflyMXClient:
 
         Snapshot URLs are usually pre-signed and need no credentials, but retry
         once with a bearer token in case the deployment serves them from the API.
+
+        These downloads are deliberately not throttled.  A snapshot is what the
+        user looks at when the doorbell rings, so making it queue behind API
+        calls would delay the one thing they are waiting for.  Ask ButterflyMX
+        whether pre-signed snapshot fetches count against any API limit; if they
+        do, this needs its own budget rather than a share of the API's.
         """
         for use_auth in (False, True):
             headers: dict[str, str] = {}
             if use_auth:
                 headers["Authorization"] = f"Bearer {await self._auth.async_get_access_token()}"
             try:
-                async with self._throttle:
-                    response = await self._session.get(
-                        url, headers=headers, timeout=ClientTimeout(total=REQUEST_TIMEOUT)
+                response = await self._session.get(
+                    url, headers=headers, timeout=ClientTimeout(total=REQUEST_TIMEOUT)
+                )
+                if response.status in (401, 403) and not use_auth:
+                    continue
+                if response.status >= 400:
+                    _LOGGER.debug(
+                        "Snapshot download failed with HTTP %s", response.status
                     )
-                    if response.status in (401, 403) and not use_auth:
-                        continue
-                    if response.status >= 400:
-                        _LOGGER.debug(
-                            "Snapshot download failed with HTTP %s", response.status
-                        )
-                        return None
-                    return await response.read()
+                    return None
+                return await response.read()
             except (TimeoutError, ClientError) as err:
                 _LOGGER.debug("Snapshot download failed: %s", err)
                 return None

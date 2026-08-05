@@ -72,6 +72,36 @@ async def test_pagination_follows_next_page(hass: HomeAssistant, aioclient_mock)
     assert [device.id for device in devices] == [5005, 2002]
 
 
+async def test_pagination_stops_when_next_page_does_not_advance(
+    hass: HomeAssistant, aioclient_mock, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A next_page that points backwards is reported, not followed."""
+    aioclient_mock.get(
+        f"{API_URL}/v4/devices?page=1",
+        json={"data": DEVICES_RESPONSE["data"][:1], "page_info": {"next_page": 1}},
+    )
+
+    devices = await _client(hass).async_get_devices(BUILDING_ID)
+
+    assert [device.id for device in devices] == [5005]
+    assert "does not move forward" in caplog.text
+
+
+async def test_pagination_reports_unusable_next_page(
+    hass: HomeAssistant, aioclient_mock, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A next_page that is not a page number is reported, not followed."""
+    aioclient_mock.get(
+        f"{API_URL}/v4/devices?page=1",
+        json={"data": DEVICES_RESPONSE["data"][:1], "page_info": {"next_page": "soon"}},
+    )
+
+    devices = await _client(hass).async_get_devices(BUILDING_ID)
+
+    assert [device.id for device in devices] == [5005]
+    assert "not a page number" in caplog.text
+
+
 async def test_throttler_returns_its_slot_when_cancelled() -> None:
     """A cancelled acquire must not retire a concurrency slot for good."""
     throttle = _Throttler(max_concurrent=2, min_interval=5.0)
