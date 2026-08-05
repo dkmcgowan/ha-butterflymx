@@ -79,6 +79,13 @@ MAX_CALL_SCAN_INTERVAL: Final = 300
 # Buildings/access points/devices change rarely.
 TOPOLOGY_SCAN_INTERVAL: Final = 3600  # seconds
 
+# When ButterflyMX is pushing calls to us, polling stops being the way calls are
+# noticed and becomes a safety net, so it slows right down.  It cannot be turned
+# off: deliveries are not guaranteed, nothing arrives while Home Assistant is
+# restarting, and a registration whose external URL has changed fails silently.
+# A slow poll repairs all three.
+WEBHOOK_FALLBACK_SCAN_INTERVAL: Final = 300  # seconds
+
 # How far back to look for calls on the first poll after startup.
 CALL_LOOKBACK: Final = 300  # seconds
 

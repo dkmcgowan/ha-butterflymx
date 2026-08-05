@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
+from unittest.mock import patch
+
 from homeassistant.components.lock import (
     DOMAIN as LOCK_DOMAIN,
     SERVICE_OPEN,
@@ -14,10 +17,14 @@ from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.butterflymx.const import (
+    CONF_ENABLE_WEBHOOK,
     CONF_RELOCK_DELAY,
     CONF_TOKEN,
+    DEFAULT_CALL_SCAN_INTERVAL,
     EVENT_CALL,
+    WEBHOOK_FALLBACK_SCAN_INTERVAL,
 )
+from custom_components.butterflymx.webhook import ButterflyMXWebhookManager
 
 from .conftest import (
     ACCESS_POINTS_RESPONSE,
@@ -281,6 +288,57 @@ async def test_reauth_started_when_refresh_is_rejected(
     assert config_entry.state is ConfigEntryState.SETUP_ERROR
     flows = hass.config_entries.flow.async_progress()
     assert any(flow["context"]["source"] == "reauth" for flow in flows)
+
+
+async def _setup_with_webhook(
+    hass: HomeAssistant, entry: MockConfigEntry
+) -> None:
+    """Set the entry up with webhook push turned on."""
+    entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(entry, options={CONF_ENABLE_WEBHOOK: True})
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+
+async def test_active_webhook_slows_the_poll(
+    hass: HomeAssistant, mock_topology, config_entry: MockConfigEntry
+) -> None:
+    """Once calls are pushed, polling is only a safety net."""
+    with patch.object(ButterflyMXWebhookManager, "async_setup", return_value=True):
+        await _setup_with_webhook(hass, config_entry)
+
+    assert config_entry.runtime_data.calls.update_interval == timedelta(
+        seconds=WEBHOOK_FALLBACK_SCAN_INTERVAL
+    )
+
+
+async def test_webhook_that_registers_nothing_keeps_the_fast_poll(
+    hass: HomeAssistant, mock_topology, config_entry: MockConfigEntry
+) -> None:
+    """If nothing is pushing, polling is still the only way calls arrive."""
+    with patch.object(ButterflyMXWebhookManager, "async_setup", return_value=False):
+        await _setup_with_webhook(hass, config_entry)
+
+    assert config_entry.runtime_data.calls.update_interval == timedelta(
+        seconds=DEFAULT_CALL_SCAN_INTERVAL
+    )
+
+
+async def test_webhook_failure_does_not_break_setup(
+    hass: HomeAssistant, mock_topology, config_entry: MockConfigEntry
+) -> None:
+    """Push is optional, so failing to set it up must not lose the integration."""
+    with patch.object(
+        ButterflyMXWebhookManager, "async_setup", side_effect=RuntimeError("boom")
+    ):
+        await _setup_with_webhook(hass, config_entry)
+
+    assert config_entry.state is ConfigEntryState.LOADED
+    assert hass.states.get(LOCK_ENTITY) is not None
+    # Still polling at the normal rate, since nothing is pushing.
+    assert config_entry.runtime_data.calls.update_interval == timedelta(
+        seconds=DEFAULT_CALL_SCAN_INTERVAL
+    )
 
 
 async def test_unload(

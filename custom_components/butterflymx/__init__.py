@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import timedelta
 import logging
 from typing import Any
 
@@ -24,6 +25,7 @@ from .const import (
     CONF_TOKEN,
     DEFAULT_CALL_SCAN_INTERVAL,
     DEFAULT_RELOCK_DELAY,
+    WEBHOOK_FALLBACK_SCAN_INTERVAL,
 )
 from .coordinator import ButterflyMXCallCoordinator, ButterflyMXTopologyCoordinator
 from .webhook import ButterflyMXWebhookManager
@@ -100,8 +102,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: ButterflyMXConfigEntry) 
 
     if entry.options.get(CONF_ENABLE_WEBHOOK, False):
         manager = ButterflyMXWebhookManager(hass, entry)
+        # Assigned before setup runs so a half-finished registration is still
+        # torn down on unload.
         entry.runtime_data.webhook = manager
-        await manager.async_setup()
+        try:
+            pushing = await manager.async_setup()
+        # Broad on purpose: push is an optional extra, and no failure in it is
+        # worth taking down an integration that works fine without it.
+        except Exception:
+            _LOGGER.exception(
+                "Could not set up ButterflyMX webhook push; continuing with "
+                "polling, which is how calls are noticed by default anyway"
+            )
+            pushing = False
+
+        if pushing:
+            # Polling is now a safety net rather than the way calls are noticed,
+            # so stop asking every few seconds.  Nothing is scheduled yet: the
+            # coordinator only arms its timer once an entity subscribes, which
+            # happens in async_forward_entry_setups below.
+            calls.update_interval = timedelta(seconds=WEBHOOK_FALLBACK_SCAN_INTERVAL)
+            _LOGGER.debug(
+                "Webhook push is active; call polling slowed to %ss",
+                WEBHOOK_FALLBACK_SCAN_INTERVAL,
+            )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))

@@ -41,8 +41,13 @@ class ButterflyMXWebhookManager:
         self._webhook_id: str | None = None
         self._registered_ids: dict[str, str] = {}
 
-    async def async_setup(self) -> None:
-        """Register the webhook locally and with ButterflyMX."""
+    async def async_setup(self) -> bool:
+        """Register the webhook locally and with ButterflyMX.
+
+        Returns True only if ButterflyMX has somewhere to push to, meaning at
+        least one tenancy is registered.  Anything less and calls still arrive
+        by polling alone, so the caller needs to know not to slow it down.
+        """
         try:
             base_url = get_url(self.hass, allow_internal=False, prefer_external=True)
         except NoURLAvailableError:
@@ -50,7 +55,7 @@ class ButterflyMXWebhookManager:
                 "Webhook push is enabled but Home Assistant has no external URL "
                 "configured; falling back to polling"
             )
-            return
+            return False
 
         webhook_id = self.entry.data.get(CONF_WEBHOOK_ID) or webhook.async_generate_id()
         if webhook_id != self.entry.data.get(CONF_WEBHOOK_ID):
@@ -67,7 +72,7 @@ class ButterflyMXWebhookManager:
         client = self.entry.runtime_data.client
         topology = self.entry.runtime_data.topology.data
         if topology is None:
-            return
+            return False
 
         stored: dict[str, str] = dict(
             self.entry.data.get(CONF_WEBHOOK_INTEGRATION_IDS) or {}
@@ -100,6 +105,13 @@ class ButterflyMXWebhookManager:
                     CONF_WEBHOOK_INTEGRATION_IDS: dict(self._registered_ids),
                 },
             )
+
+        if not self._registered_ids:
+            _LOGGER.warning(
+                "Webhook push is enabled but no ButterflyMX tenancy accepted a "
+                "registration; calls will only be noticed by polling"
+            )
+        return bool(self._registered_ids)
 
     async def async_teardown(self) -> None:
         """Unregister the webhook and remove it from ButterflyMX."""
