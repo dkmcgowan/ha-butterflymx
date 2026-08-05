@@ -88,10 +88,20 @@ MAX_RELOCK_DELAY: Final = 300
 
 # --- Device types -------------------------------------------------------------
 
-# Device "type" values that represent a lock a tenant can release directly.
-# Access points cover intercoms/ACS controllers/keypads/common-area locks; these
-# are the unit-level smart locks that are addressed by device_id instead.
-UNIT_LOCK_DEVICE_TYPES: Final[frozenset[str]] = frozenset(
+# Doors always belong to a building, never to a unit.  A tenancy only supplies
+# the identity a release is performed as, and the unit only says who a visitor
+# was calling.
+#
+# Most doors arrive as access points.  These device "type" values are the ones
+# released by device_id instead, so they are picked up separately.  Note that a
+# door release sent with device_id opens *every* access point on that device,
+# whereas access_point_id opens exactly one.
+#
+# The API documents ten device types: cloud_based_access_controller, keypad,
+# smart_lock, panel, virtual_intercom, elevator_control, key_locker, elevator,
+# front_desk_station and remote_lock.  Only the two lock types are exposed;
+# the rest are either reachable as access points already or are not doors.
+DIRECT_LOCK_DEVICE_TYPES: Final[frozenset[str]] = frozenset(
     {"smart_lock", "remote_lock"}
 )
 

@@ -10,26 +10,59 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+import logging
 from typing import Any
 
 from homeassistant.util import dt as dt_util
 
+_LOGGER = logging.getLogger(__name__)
 
-def _int_or_none(value: Any) -> int | None:
-    """Coerce a value to int, tolerating strings and nulls."""
+
+def _int_or_none(value: Any, *, field_name: str = "value") -> int | None:
+    """Coerce a value to int, tolerating strings and nulls.
+
+    A missing field is normal and stays quiet.  A field that is present but
+    cannot be read is a payload the integration does not understand, so it is
+    surfaced in the log rather than silently dropped.
+    """
     if value is None:
         return None
     try:
         return int(value)
     except (TypeError, ValueError):
+        _LOGGER.warning(
+            "ButterflyMX returned %s=%r, which is not a number; ignoring it",
+            field_name,
+            value,
+        )
         return None
 
 
-def _parse_dt(value: Any) -> datetime | None:
-    """Parse an ISO-8601 timestamp from the API."""
+def _parse_dt(value: Any, *, field_name: str = "timestamp") -> datetime | None:
+    """Parse an ISO-8601 timestamp from the API.
+
+    As with :func:`_int_or_none`, an absent value is expected but an
+    unparseable one is reported.
+    """
     if not value:
         return None
-    return dt_util.parse_datetime(str(value))
+    parsed = dt_util.parse_datetime(str(value))
+    if parsed is None:
+        _LOGGER.warning(
+            "ButterflyMX returned %s=%r, which is not a valid timestamp; "
+            "ignoring it",
+            field_name,
+            value,
+        )
+    return parsed
+
+
+def distinct_building_ids(tenants: list[Tenant]) -> list[int]:
+    """Return the distinct building IDs across a list of tenants, in order."""
+    seen: dict[int, None] = {}
+    for tenant in tenants:
+        seen.setdefault(tenant.building_id, None)
+    return list(seen)
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,8 +76,9 @@ class Unit:
     @classmethod
     def from_api(cls, data: dict[str, Any]) -> Unit | None:
         """Build a Unit from an API payload."""
-        unit_id = _int_or_none(data.get("id"))
+        unit_id = _int_or_none(data.get("id"), field_name="unit.id")
         if unit_id is None:
+            _LOGGER.warning("Ignoring ButterflyMX unit with no usable id: %s", data)
             return None
         return cls(
             id=unit_id,
@@ -85,9 +119,17 @@ class Tenant:
     @classmethod
     def from_api(cls, data: dict[str, Any]) -> Tenant | None:
         """Build a Tenant from an API payload."""
-        tenant_id = _int_or_none(data.get("id"))
-        building_id = _int_or_none(data.get("building_id"))
+        tenant_id = _int_or_none(data.get("id"), field_name="tenant.id")
+        building_id = _int_or_none(
+            data.get("building_id"), field_name="tenant.building_id"
+        )
         if tenant_id is None or building_id is None:
+            _LOGGER.warning(
+                "Ignoring ButterflyMX tenant record missing id or building_id "
+                "(id=%s, building_id=%s); doors for it will not appear",
+                data.get("id"),
+                data.get("building_id"),
+            )
             return None
         unit_data = data.get("unit")
         return cls(
@@ -115,14 +157,25 @@ class AccessPoint:
     @classmethod
     def from_api(cls, data: dict[str, Any]) -> AccessPoint | None:
         """Build an AccessPoint from an API payload."""
-        access_point_id = _int_or_none(data.get("id"))
-        building_id = _int_or_none(data.get("building_id"))
+        access_point_id = _int_or_none(data.get("id"), field_name="access_point.id")
+        building_id = _int_or_none(
+            data.get("building_id"), field_name="access_point.building_id"
+        )
         if access_point_id is None or building_id is None:
+            _LOGGER.warning(
+                "Ignoring ButterflyMX access point missing id or building_id "
+                "(id=%s, building_id=%s); this door will not appear",
+                data.get("id"),
+                data.get("building_id"),
+            )
             return None
         raw_device_ids = data.get("device_ids") or []
         device_ids = tuple(
             device_id
-            for device_id in (_int_or_none(value) for value in raw_device_ids)
+            for device_id in (
+                _int_or_none(value, field_name="access_point.device_ids[]")
+                for value in raw_device_ids
+            )
             if device_id is not None
         )
         return cls(
@@ -147,9 +200,17 @@ class Device:
     @classmethod
     def from_api(cls, data: dict[str, Any]) -> Device | None:
         """Build a Device from an API payload."""
-        device_id = _int_or_none(data.get("id"))
-        building_id = _int_or_none(data.get("building_id"))
+        device_id = _int_or_none(data.get("id"), field_name="device.id")
+        building_id = _int_or_none(
+            data.get("building_id"), field_name="device.building_id"
+        )
         if device_id is None or building_id is None:
+            _LOGGER.warning(
+                "Ignoring ButterflyMX device missing id or building_id "
+                "(id=%s, building_id=%s)",
+                data.get("id"),
+                data.get("building_id"),
+            )
             return None
         return cls(
             id=device_id,
@@ -180,11 +241,19 @@ class Call:
     @classmethod
     def from_api(cls, data: dict[str, Any], building_id: int | None = None) -> Call | None:
         """Build a Call from an API payload."""
-        call_id = _int_or_none(data.get("id"))
-        resolved_building_id = _int_or_none(data.get("building_id"))
+        call_id = _int_or_none(data.get("id"), field_name="call.id")
+        resolved_building_id = _int_or_none(
+            data.get("building_id"), field_name="call.building_id"
+        )
         if resolved_building_id is None:
             resolved_building_id = building_id
         if call_id is None or resolved_building_id is None:
+            _LOGGER.warning(
+                "Ignoring ButterflyMX call missing id or building_id "
+                "(id=%s, building_id=%s); the doorbell will not fire for it",
+                data.get("id"),
+                data.get("building_id"),
+            )
             return None
 
         device = data.get("device") or {}
@@ -194,15 +263,28 @@ class Call:
         return cls(
             id=call_id,
             building_id=resolved_building_id,
-            logged_at=_parse_dt(data.get("logged_at") or data.get("created_at")),
+            logged_at=_parse_dt(
+                data.get("logged_at") or data.get("created_at"),
+                field_name="call.logged_at",
+            ),
             notification_type=data.get("notification_type"),
             status=data.get("status"),
             image_url=data.get("image_url"),
-            unit_id=_int_or_none(unit.get("id")) if isinstance(unit, dict) else None,
-            device_id=_int_or_none(device.get("id")) if isinstance(device, dict) else None,
+            unit_id=(
+                _int_or_none(unit.get("id"), field_name="call.unit.id")
+                if isinstance(unit, dict)
+                else None
+            ),
+            device_id=(
+                _int_or_none(device.get("id"), field_name="call.device.id")
+                if isinstance(device, dict)
+                else None
+            ),
             device_name=device.get("name") if isinstance(device, dict) else None,
             recipient_id=(
-                _int_or_none(recipient.get("id")) if isinstance(recipient, dict) else None
+                _int_or_none(recipient.get("id"), field_name="call.recipient.id")
+                if isinstance(recipient, dict)
+                else None
             ),
             recipient_type=(
                 recipient.get("type") if isinstance(recipient, dict) else None
@@ -221,12 +303,20 @@ class Call:
             "status": self.status,
             "image_url": self.image_url,
             "logged_at": self.logged_at.isoformat() if self.logged_at else None,
+            # Which resident was called.  Useful in automations on multi-unit
+            # accounts, where the unit alone does not identify the person.
+            "recipient_id": self.recipient_id,
+            "recipient_type": self.recipient_type,
         }
 
 
-@dataclass(slots=True)
+@dataclass(frozen=True, slots=True)
 class ButterflyMXTopology:
-    """Everything the integration knows about the account's doors."""
+    """Everything the integration knows about the account's doors.
+
+    Replaced wholesale on every topology refresh rather than mutated in place,
+    so it is frozen like the records it holds.
+    """
 
     tenants: list[Tenant] = field(default_factory=list)
     access_points: list[AccessPoint] = field(default_factory=list)
@@ -235,17 +325,28 @@ class ButterflyMXTopology:
     @property
     def building_ids(self) -> list[int]:
         """Distinct building IDs the user has access to."""
-        seen: dict[int, None] = {}
-        for tenant in self.tenants:
-            seen.setdefault(tenant.building_id, None)
-        return list(seen)
+        return distinct_building_ids(self.tenants)
 
     def tenant_for_building(self, building_id: int) -> Tenant | None:
-        """Return the tenant record to act as for a given building."""
-        for tenant in self.tenants:
-            if tenant.building_id == building_id:
-                return tenant
-        return None
+        """Return the tenant record to act as for a given building.
+
+        An account is normally one tenancy per building.  If ButterflyMX ever
+        returns several, pick the lowest ID so the choice is stable across
+        restarts instead of depending on the order the API replied in.
+        """
+        matches = [
+            tenant for tenant in self.tenants if tenant.building_id == building_id
+        ]
+        if not matches:
+            return None
+        if len(matches) > 1:
+            _LOGGER.debug(
+                "Building %s has %d tenant records (%s); acting as the lowest ID",
+                building_id,
+                len(matches),
+                [tenant.id for tenant in matches],
+            )
+        return min(matches, key=lambda tenant: tenant.id)
 
     def tenant_for_unit(self, unit_id: int | None) -> Tenant | None:
         """Return the tenant record belonging to a unit."""

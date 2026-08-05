@@ -27,17 +27,24 @@ from homeassistant.util import dt as dt_util
 from .api import ButterflyMXClient
 from .const import (
     CALL_LOOKBACK,
+    DIRECT_LOCK_DEVICE_TYPES,
     DOMAIN,
     EVENT_CALL,
     TOPOLOGY_SCAN_INTERVAL,
-    UNIT_LOCK_DEVICE_TYPES,
 )
 from .exceptions import (
     ButterflyMXAuthError,
     ButterflyMXConnectionError,
     ButterflyMXError,
 )
-from .models import AccessPoint, ButterflyMXTopology, Call, Device, Tenant
+from .models import (
+    AccessPoint,
+    ButterflyMXTopology,
+    Call,
+    Device,
+    Tenant,
+    distinct_building_ids,
+)
 
 if TYPE_CHECKING:
     from . import ButterflyMXConfigEntry
@@ -71,9 +78,13 @@ class LockTarget:
 def build_lock_targets(topology: ButterflyMXTopology) -> list[LockTarget]:
     """Work out which doors should become lock entities.
 
+    Every door belongs to a building.  The tenancy is only the identity the
+    release is performed as, which is why each target is resolved through
+    :meth:`ButterflyMXTopology.tenant_for_building` rather than through a unit.
+
     Access points cover intercoms, ACS controllers, keypads and common-area
-    locks.  Unit-level smart locks are not access points and have to be released
-    by ``device_id`` instead, so they are added separately, skipping any device
+    locks.  A few doors are not access points and have to be released by
+    ``device_id`` instead, so they are added separately, skipping any device
     already reachable through an access point to avoid duplicate entities.
     """
     targets: list[LockTarget] = []
@@ -102,7 +113,7 @@ def build_lock_targets(topology: ButterflyMXTopology) -> list[LockTarget]:
     for device in topology.devices:
         if device.id in claimed_device_ids:
             continue
-        if (device.type or "").lower() not in UNIT_LOCK_DEVICE_TYPES:
+        if (device.type or "").lower() not in DIRECT_LOCK_DEVICE_TYPES:
             continue
         tenant = topology.tenant_for_building(device.building_id)
         if tenant is None:
@@ -154,7 +165,7 @@ class ButterflyMXTopologyCoordinator(DataUpdateCoordinator[ButterflyMXTopology])
 
             access_points: list[AccessPoint] = []
             devices: list[Device] = []
-            for building_id in _distinct_building_ids(tenants):
+            for building_id in distinct_building_ids(tenants):
                 access_points.extend(
                     await self.client.async_get_access_points(building_id)
                 )
@@ -177,14 +188,6 @@ class ButterflyMXTopologyCoordinator(DataUpdateCoordinator[ButterflyMXTopology])
         return ButterflyMXTopology(
             tenants=tenants, access_points=access_points, devices=devices
         )
-
-
-def _distinct_building_ids(tenants: list[Tenant]) -> list[int]:
-    """Return the distinct building IDs across a list of tenants."""
-    seen: dict[int, None] = {}
-    for tenant in tenants:
-        seen.setdefault(tenant.building_id, None)
-    return list(seen)
 
 
 class ButterflyMXCallCoordinator(DataUpdateCoordinator[dict[int, Call]]):
