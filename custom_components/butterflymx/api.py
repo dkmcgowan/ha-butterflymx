@@ -339,35 +339,27 @@ class ButterflyMXClient:
     async def async_fetch_image(self, url: str) -> bytes | None:
         """Download a call snapshot.
 
-        Snapshot URLs are usually pre-signed and need no credentials, but retry
-        once with a bearer token in case the deployment serves them from the API.
+        Sent without credentials, deliberately.  A snapshot URL points straight
+        at a public S3 object with no signature on it, and attaching a bearer
+        token makes S3 reject the request outright, so authenticating here would
+        only break the download.
 
-        These downloads are deliberately not throttled.  A snapshot is what the
-        user looks at when the doorbell rings, so making it queue behind API
-        calls would delay the one thing they are waiting for.  Ask ButterflyMX
-        whether pre-signed snapshot fetches count against any API limit; if they
-        do, this needs its own budget rather than a share of the API's.
+        Worth knowing, and not something this integration can fix: that URL is
+        the picture.  Anyone holding it can see who was at the door, with no
+        credentials and no expiry, which is why it is redacted everywhere it
+        would otherwise be written down.
         """
-        for use_auth in (False, True):
-            headers: dict[str, str] = {}
-            if use_auth:
-                headers["Authorization"] = f"Bearer {await self._auth.async_get_access_token()}"
-            try:
-                response = await self._session.get(
-                    url, headers=headers, timeout=ClientTimeout(total=REQUEST_TIMEOUT)
-                )
-                if response.status in (401, 403) and not use_auth:
-                    continue
-                if response.status >= 400:
-                    _LOGGER.debug(
-                        "Snapshot download failed with HTTP %s", response.status
-                    )
-                    return None
-                return await response.read()
-            except (TimeoutError, ClientError) as err:
-                _LOGGER.debug("Snapshot download failed: %s", err)
+        try:
+            response = await self._session.get(
+                url, timeout=ClientTimeout(total=REQUEST_TIMEOUT)
+            )
+            if response.status >= 400:
+                _LOGGER.debug("Snapshot download failed with HTTP %s", response.status)
                 return None
-        return None
+            return await response.read()
+        except (TimeoutError, ClientError) as err:
+            _LOGGER.debug("Snapshot download failed: %s", err)
+            return None
 
     # -- Webhook integrations -------------------------------------------------
 
