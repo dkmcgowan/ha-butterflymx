@@ -1,17 +1,17 @@
 """Async client for the ButterflyMX v4 REST API.
 
-ButterflyMX documents no rate limits, so the throttling here is a house rule
-rather than a published requirement: cap concurrency, space requests out, retry
-only idempotent calls, and honor ``Retry-After`` when the server pushes back.
-The point is not to guess their limit but to make sure a bug on our side cannot
-turn into a request flood -- a client that hammers an endpoint after an auth
-failure is how credentials get blocked.  Door releases are never retried,
-because firing a door twice after a slow response is worse than failing.
+There is no request throttling here on purpose.  ButterflyMX publishes no rate
+limits, returns no rate-limit headers, and their own app does not pace itself;
+the integration also issues its requests one after another rather than in
+parallel, so a client-side cap had nothing to cap.  What it did do was add a
+fixed delay to every call and, for a while, deadlock the client when a request
+was cancelled mid-wait.
 
-Note that ``MIN_REQUEST_INTERVAL`` is the real limiter, not
-``MAX_CONCURRENT_REQUESTS``: request starts are serialized, so the ceiling is
-one request per interval no matter how many slots are free.  Both values are
-guesses pending an answer from ButterflyMX about acceptable polling rates.
+What is kept is the part that matters: a request that fails is retried a few
+times with exponential backoff, ``Retry-After`` is honored when the server asks
+for it, and door releases are never retried at all, because firing a door twice
+after a slow response is worse than failing.  The goal is not to guess a limit
+but to make sure a fault on our side cannot turn into a request flood.
 """
 
 from __future__ import annotations
@@ -31,9 +31,7 @@ from .const import (
     API_VERSION_PATH,
     BACKOFF_BASE,
     BACKOFF_MAX,
-    MAX_CONCURRENT_REQUESTS,
     MAX_RETRIES,
-    MIN_REQUEST_INTERVAL,
     PAGE_SIZE,
     REQUEST_TIMEOUT,
     WEBHOOK_RESOURCE_CALL,
@@ -51,49 +49,6 @@ _LOGGER = logging.getLogger(__name__)
 RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504})
 
 
-class _Throttler:
-    """Cap concurrency and enforce a minimum gap between requests."""
-
-    def __init__(self, max_concurrent: int, min_interval: float) -> None:
-        """Initialize the throttler."""
-        self._semaphore = asyncio.Semaphore(max_concurrent)
-        self._spacing_lock = asyncio.Lock()
-        self._min_interval = min_interval
-        self._next_slot = 0.0
-
-    async def acquire(self) -> None:
-        """Wait until it is polite to send the next request."""
-        await self._semaphore.acquire()
-        try:
-            async with self._spacing_lock:
-                loop = asyncio.get_running_loop()
-                now = loop.time()
-                wait = self._next_slot - now
-                if wait > 0:
-                    await asyncio.sleep(wait)
-                    now = loop.time()
-                self._next_slot = now + self._min_interval
-        except BaseException:
-            # The slot is only handed back by __aexit__, which never runs if
-            # __aenter__ raises.  Cancellation while waiting here would
-            # otherwise retire a slot permanently, and losing all of them
-            # deadlocks every later request.
-            self._semaphore.release()
-            raise
-
-    def release(self) -> None:
-        """Release the concurrency slot."""
-        self._semaphore.release()
-
-    async def __aenter__(self) -> None:
-        """Enter the throttle."""
-        await self.acquire()
-
-    async def __aexit__(self, *_exc: object) -> None:
-        """Leave the throttle."""
-        self.release()
-
-
 def _retry_after_seconds(response: ClientResponse) -> float | None:
     """Read a ``Retry-After`` header, if the server sent a usable one."""
     raw = response.headers.get("Retry-After")
@@ -107,7 +62,7 @@ def _retry_after_seconds(response: ClientResponse) -> float | None:
 
 
 class ButterflyMXClient:
-    """Thin, throttled wrapper around the ButterflyMX v4 API."""
+    """Thin wrapper around the ButterflyMX v4 API."""
 
     def __init__(
         self,
@@ -119,7 +74,6 @@ class ButterflyMXClient:
         self._session = session
         self._api_url = api_url.rstrip("/")
         self._auth = auth
-        self._throttle = _Throttler(MAX_CONCURRENT_REQUESTS, MIN_REQUEST_INTERVAL)
 
     @property
     def auth(self) -> ButterflyMXAuth:
@@ -151,16 +105,15 @@ class ButterflyMXClient:
             }
 
             try:
-                async with self._throttle:
-                    response = await self._session.request(
-                        method,
-                        url,
-                        params=params,
-                        json=json,
-                        headers=headers,
-                        timeout=ClientTimeout(total=REQUEST_TIMEOUT),
-                    )
-                    body = await response.read()
+                response = await self._session.request(
+                    method,
+                    url,
+                    params=params,
+                    json=json,
+                    headers=headers,
+                    timeout=ClientTimeout(total=REQUEST_TIMEOUT),
+                )
+                body = await response.read()
             except TimeoutError as err:
                 if retry and attempt <= MAX_RETRIES:
                     await self._async_backoff(attempt)

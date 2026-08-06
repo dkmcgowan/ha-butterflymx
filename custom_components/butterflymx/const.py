@@ -57,9 +57,9 @@ API_VERSION_PATH: Final = "/v4"
 # Access token lifetime is documented as 24h; refresh this far ahead of expiry.
 TOKEN_EXPIRY_MARGIN: Final = 300  # seconds
 
-# No rate limits are documented, so be conservative and self-throttle.
-MAX_CONCURRENT_REQUESTS: Final = 4
-MIN_REQUEST_INTERVAL: Final = 0.25  # seconds between requests
+# Nothing here paces requests.  No rate limits are published, none are returned
+# in response headers, and requests are issued one at a time anyway.  These
+# values only govern what happens after something goes wrong.
 MAX_RETRIES: Final = 3
 BACKOFF_BASE: Final = 1.5  # seconds
 BACKOFF_MAX: Final = 30.0  # seconds
