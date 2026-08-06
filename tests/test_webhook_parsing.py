@@ -7,6 +7,51 @@ import pytest
 from custom_components.butterflymx.webhook import parse_call_payload
 
 
+def _documented(resource_type: str, data: dict) -> dict:
+    """Wrap a body in the envelope ButterflyMX documents for a delivery."""
+    return {
+        "event": {"resource_type": resource_type, "action": "create", "data": data}
+    }
+
+
+def test_documented_event_envelope() -> None:
+    """The shape the API documentation actually shows.
+
+    Every other shape here is a guess made before the documentation was read.
+    This is the one deliveries are expected to arrive in.
+    """
+    call = parse_call_payload(
+        _documented(
+            "call",
+            {
+                "id": 123456789,
+                "logged_at": "2026-04-24T10:24:35Z",
+                "image_url": "https://cdn.example/snapshot.png",
+            },
+        ),
+        777,
+    )
+
+    assert call is not None
+    assert call.id == 123456789
+    assert call.building_id == 777
+    assert call.logged_at is not None
+
+
+def test_documented_door_release_is_not_a_doorbell() -> None:
+    """A door opening is not somebody at the door."""
+    payload = _documented(
+        "door_release",
+        {"id": 1, "access_point": 22177636, "name": "John Tenant"},
+    )
+    assert parse_call_payload(payload, 777) is None
+
+
+def test_integration_events_are_not_calls() -> None:
+    """A notification about a webhook registration must not ring the doorbell."""
+    assert parse_call_payload(_documented("integrations", {"id": 1}), 777) is None
+
+
 def test_bare_call_object() -> None:
     """A plain call object is accepted."""
     call = parse_call_payload({"id": 5, "building_id": 7, "unit": {"id": 9}})

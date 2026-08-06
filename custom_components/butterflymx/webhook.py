@@ -30,6 +30,10 @@ from .models import Call
 
 _LOGGER = logging.getLogger(__name__)
 
+# Resource types that mean "somebody called the unit".  Deliveries about
+# anything else, including integrations themselves, are not doorbells.
+CALL_RESOURCE_TYPES = frozenset({WEBHOOK_RESOURCE_CALL, "calls"})
+
 
 class ButterflyMXWebhookManager:
     """Registers a Home Assistant webhook and mirrors it in ButterflyMX."""
@@ -167,15 +171,20 @@ class ButterflyMXWebhookManager:
         return Response(status=200)
 
 
-def parse_call_payload(payload: Any, default_building_id: int | None = None) -> Call | None:
-    """Pull a Call out of a webhook body, whatever shape it arrives in.
+def unwrap_event(payload: Any) -> tuple[str | None, dict[str, Any] | None]:
+    """Peel the delivery envelope off, returning its resource type and body.
 
-    Handles a bare call object, a JSON:API style ``data.attributes`` envelope,
-    and a ``resource``/``resource_type`` wrapper.  Returns ``None`` for anything
-    that is not a call.
+    ButterflyMX documents deliveries as ``{"event": {"resource_type", "action",
+    "data"}}``.  The other shapes handled here are not documented and are kept
+    only because the exact envelope has never been seen against a live account;
+    they cost nothing and none of them can match the documented one.
     """
     if not isinstance(payload, dict):
-        return None
+        return None, None
+
+    event = payload.get("event")
+    if isinstance(event, dict):
+        payload = event
 
     resource_type = payload.get("resource_type") or payload.get("type")
     body: Any = payload
@@ -193,13 +202,24 @@ def parse_call_payload(payload: Any, default_building_id: int | None = None) -> 
             resource_type = resource_type or key
             break
 
-    if resource_type and str(resource_type).lower() not in {
-        WEBHOOK_RESOURCE_CALL,
-        "calls",
-        "integrations",
-    }:
-        return None
-    if not isinstance(body, dict):
-        return None
+    return (
+        str(resource_type).lower() if resource_type else None,
+        body if isinstance(body, dict) else None,
+    )
 
+
+def is_call_event(resource_type: str | None) -> bool:
+    """Return True when a delivery is about a call.
+
+    An unlabelled body is assumed to be a call, since a call is the only thing
+    this integration subscribes to.
+    """
+    return resource_type is None or resource_type in CALL_RESOURCE_TYPES
+
+
+def parse_call_payload(payload: Any, default_building_id: int | None = None) -> Call | None:
+    """Pull a Call out of a webhook body, whatever shape it arrives in."""
+    resource_type, body = unwrap_event(payload)
+    if body is None or not is_call_event(resource_type):
+        return None
     return Call.from_api(body, default_building_id)
