@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import UTC, datetime
 from json import loads as json_loads
 import logging
 import random
@@ -47,6 +47,30 @@ from .models import AccessPoint, Call, Device, Tenant
 _LOGGER = logging.getLogger(__name__)
 
 RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504})
+
+
+def _as_api_timestamp(value: datetime) -> str:
+    """Render a datetime the way ButterflyMX's ``q[..._gteq]`` filters expect.
+
+    Worth being careful here.  A filter the server cannot read is not rejected:
+    sending ``q[logged_at_gteq]=not-a-date`` returns HTTP 200 and the *unfiltered*
+    list.  So a bad timestamp does not fail, it silently widens the window to
+    everything, and deduplication hides the symptom while every poll re-fetches
+    the whole call log.
+
+    The realistic way to get one is a naive or local-time datetime, which
+    formats into a perfectly valid string for the wrong moment.  Converting to
+    UTC first is what stops that.
+    """
+    if value.tzinfo is None:
+        _LOGGER.warning(
+            "A call query was given the naive timestamp %s; reading it as UTC. "
+            "This is a bug, and the wrong reading would quietly shift which "
+            "calls are considered new",
+            value,
+        )
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
 
 
 def _retry_after_seconds(response: ClientResponse) -> float | None:
@@ -288,7 +312,7 @@ class ButterflyMXClient:
         """
         params: dict[str, Any] = {"page": 1, "per": min(limit, PAGE_SIZE)}
         if since is not None:
-            params["q[logged_at_gteq]"] = since.strftime("%Y-%m-%d %H:%M:%S UTC")
+            params["q[logged_at_gteq]"] = _as_api_timestamp(since)
         payload = await self._async_request(
             "GET", f"/buildings/{building_id}/calls", params=params
         )

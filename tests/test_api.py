@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta, timezone
+
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 import pytest
@@ -98,6 +100,51 @@ async def test_pagination_reports_unusable_next_page(
 
     assert [device.id for device in devices] == [5005]
     assert "not a page number" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "offset_hours",
+    [0, -5, 9],
+    ids=["utc", "behind-utc", "ahead-of-utc"],
+)
+async def test_call_window_is_the_same_instant_in_any_timezone(
+    hass: HomeAssistant, aioclient_mock, offset_hours: int
+) -> None:
+    """The filter must describe a moment, not a wall clock.
+
+    A wrong-but-valid timestamp is the dangerous case: ButterflyMX answers 200
+    and ignores a filter it cannot read, so the window silently becomes
+    everything rather than failing.
+    """
+    aioclient_mock.get(
+        f"{API_URL}/v4/buildings/{BUILDING_ID}/calls",
+        json={"data": [], "page_info": {"next_page": None}},
+    )
+    moment = datetime(2026, 8, 6, 14, 30, tzinfo=UTC)
+    local = moment.astimezone(timezone(timedelta(hours=offset_hours)))
+
+    await _client(hass).async_get_calls(BUILDING_ID, since=local)
+
+    query = aioclient_mock.mock_calls[0][1].query
+    assert query["q[logged_at_gteq]"] == "2026-08-06 14:30:00 UTC"
+
+
+async def test_naive_call_window_is_reported(
+    hass: HomeAssistant, aioclient_mock, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A naive datetime is a bug, and a silent one, so say so."""
+    aioclient_mock.get(
+        f"{API_URL}/v4/buildings/{BUILDING_ID}/calls",
+        json={"data": [], "page_info": {"next_page": None}},
+    )
+
+    # Deliberately naive: that is the mistake being guarded against.
+    naive = datetime(2026, 8, 6, 14, 30, tzinfo=UTC).replace(tzinfo=None)
+    await _client(hass).async_get_calls(BUILDING_ID, since=naive)
+
+    assert "naive timestamp" in caplog.text
+    query = aioclient_mock.mock_calls[0][1].query
+    assert query["q[logged_at_gteq]"] == "2026-08-06 14:30:00 UTC"
 
 
 async def test_authorization_header_is_sent(hass: HomeAssistant, aioclient_mock) -> None:
