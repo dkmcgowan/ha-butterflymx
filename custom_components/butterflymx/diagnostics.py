@@ -9,21 +9,41 @@ from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.core import HomeAssistant
 
 from . import ButterflyMXConfigEntry
-from .const import CONF_CLIENT_ID, CONF_CLIENT_SECRET, CONF_TOKEN, CONF_WEBHOOK_ID
-
-TO_REDACT = {
+from .const import (
     CONF_CLIENT_ID,
     CONF_CLIENT_SECRET,
     CONF_TOKEN,
     CONF_WEBHOOK_ID,
+    CONF_WEBHOOK_INTEGRATION_IDS,
+)
+
+# A diagnostics dump usually ends up attached to a bug report, so it has to be
+# safe to hand to a stranger.
+TO_REDACT = {
+    # Credentials and anything that acts like one.  Anybody holding the webhook
+    # ID can post fake doorbell events, and the integration IDs are live handles
+    # on the account's registrations; "webhook_enabled" says all that is needed.
+    CONF_CLIENT_ID,
+    CONF_CLIENT_SECRET,
+    CONF_TOKEN,
+    CONF_WEBHOOK_ID,
+    CONF_WEBHOOK_INTEGRATION_IDS,
     "access_token",
     "refresh_token",
+    # A snapshot URL is pre-signed, so the link is the picture.
+    "image_url",
+    "serial_number",
+    # Who the resident is.
     "email",
     "first_name",
     "last_name",
     "full_name",
-    "image_url",
-    "serial_number",
+    # Where they live.  Redacting the names but not the address would be a
+    # strange place to stop: building plus unit plus floor is a home address.
+    # building_id and unit_id survive, which is what correlating logs needs.
+    "building_name",
+    "label",
+    "floor",
 }
 
 
@@ -31,23 +51,32 @@ async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: ButterflyMXConfigEntry
 ) -> dict[str, Any]:
     """Return diagnostics for a config entry."""
-    runtime = entry.runtime_data
-    topology = runtime.topology.data
-
-    return {
+    result: dict[str, Any] = {
         "entry": {
             "data": async_redact_data(dict(entry.data), TO_REDACT),
+            # Only polling intervals and a boolean, nothing to hide.
             "options": dict(entry.options),
         },
-        "topology": async_redact_data(
-            asdict(topology) if topology is not None else {}, TO_REDACT
-        ),
-        "calls": async_redact_data(
-            {
-                str(tenant_id): asdict(call)
-                for tenant_id, call in (runtime.calls.data or {}).items()
-            },
-            TO_REDACT,
-        ),
-        "webhook_enabled": runtime.webhook is not None,
     }
+
+    # Diagnostics are wanted most when something is wrong, and that includes a
+    # setup that never finished and so never attached its runtime data.  Report
+    # what there is rather than failing the download.
+    runtime = getattr(entry, "runtime_data", None)
+    if runtime is None:
+        result["state"] = "not loaded"
+        return result
+
+    topology = runtime.topology.data
+    result["topology"] = async_redact_data(
+        asdict(topology) if topology is not None else {}, TO_REDACT
+    )
+    result["calls"] = async_redact_data(
+        {
+            str(tenant_id): asdict(call)
+            for tenant_id, call in (runtime.calls.data or {}).items()
+        },
+        TO_REDACT,
+    )
+    result["webhook_enabled"] = runtime.webhook is not None
+    return result
