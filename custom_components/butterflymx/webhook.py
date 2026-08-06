@@ -1,12 +1,29 @@
 """Optional webhook push support.
 
 Polling the call log is the default because it works for every install.  If Home
-Assistant is reachable from the internet, ButterflyMX can push call events
-instead, which removes the polling latency.
+Assistant is reachable from the internet, ButterflyMX can push instead, which
+takes the latency out of the doorbell.
 
-This is experimental.  ButterflyMX documents the webhook registration endpoints
-and the general shape of the payload but not an exact schema, so the parser below
-accepts several shapes and logs anything it cannot interpret.
+A delivery is treated as a nudge, not as data.  The body is never parsed, and
+that is a deliberate decision made after seeing real ones:
+
+* It carries no call id.  There is a ``guid``, but the REST API knows calls by
+  an integer ``id`` and returns no guid, so the two cannot be matched up.  A
+  pushed call and the same call arriving on the next poll would look like two
+  different visitors and ring the doorbell twice.
+* Its other identifiers belong to a different ID space.  For one real call the
+  webhook said panel 28516 and user 3220259 where the REST API said device 58805
+  and tenant 8304247.  Only the unit ID agrees.
+* It says nothing about what happened.  Two deliveries, one call answered and
+  one left to time out, differed only by guid and image URL.  REST reports
+  ``opened_door`` against ``timeout_online_signal``, plus a timestamp and a
+  status the payload simply does not have.
+* It carries the resident's name, email and SIP username, none of which this
+  integration wants to touch.
+
+So the delivery only says "go and look", and the call log stays the single
+source of truth.  A real delivery arrives in the same second the call is logged,
+so the record is already there to be found.
 """
 
 from __future__ import annotations
@@ -26,13 +43,8 @@ from .const import (
     WEBHOOK_RESOURCE_CALL,
 )
 from .exceptions import ButterflyMXError
-from .models import ButterflyMXTopology, Call
 
 _LOGGER = logging.getLogger(__name__)
-
-# Resource types that mean "somebody called the unit".  Deliveries about
-# anything else, including integrations themselves, are not doorbells.
-CALL_RESOURCE_TYPES = frozenset({WEBHOOK_RESOURCE_CALL, "calls"})
 
 
 class ButterflyMXWebhookManager:
@@ -147,157 +159,17 @@ class ButterflyMXWebhookManager:
     async def _async_handle_webhook(
         self, hass: HomeAssistant, webhook_id: str, request: Request
     ) -> Response:
-        """Handle an inbound ButterflyMX event."""
-        try:
-            payload = await request.json()
-        except ValueError:
-            _LOGGER.debug("Ignoring ButterflyMX webhook with a non-JSON body")
-            return Response(status=200)
+        """Take a delivery as a signal to go and read the call log.
 
-        _LOGGER.debug("ButterflyMX webhook payload: %s", payload)
+        The body is not parsed; see the module docstring for why.  Always
+        answers 200: a non-200 asks ButterflyMX to deliver again, and there is
+        nothing here that a second attempt would fix.
+        """
         runtime = getattr(self.entry, "runtime_data", None)
-
-        resource_type, body = unwrap_event(payload)
-        if not is_call_event(resource_type):
-            # Only calls are subscribed to, so anything else is somebody else's
-            # registration reaching us and is not worth complaining about.
-            _LOGGER.debug("Ignoring ButterflyMX %s webhook", resource_type)
+        if runtime is None:
             return Response(status=200)
 
-        topology = runtime.topology.data if runtime is not None else None
-        call = parse_call_payload(payload, building_id_for_event(body, topology))
-        if call is None:
-            # Answer 200 regardless: a non-200 has ButterflyMX retry, and a
-            # payload we cannot read will not read any better the second time.
-            _LOGGER.warning(
-                "Ignoring a ButterflyMX webhook that could not be read as a "
-                "call; the doorbell did not fire for it. Payload: %s",
-                payload,
-            )
-            return Response(status=200)
-
-        if runtime is not None:
-            await runtime.calls.async_handle_pushed_call(call)
+        # Debounced and immediate: the first delivery refreshes at once, and a
+        # burst collapses into one read rather than one read each.
+        await runtime.calls.async_request_refresh()
         return Response(status=200)
-
-
-def _identifier(body: dict[str, Any], *names: str) -> int | None:
-    """Read an ID that may arrive bare or wrapped in an object.
-
-    The one documented delivery carries ``"access_point": 22177636`` rather than
-    a nested object, while the REST API nests the same things, so both are
-    accepted.
-    """
-    for name in names:
-        value: Any = body.get(name)
-        if isinstance(value, dict):
-            value = value.get("id")
-        if value is None:
-            continue
-        try:
-            return int(value)
-        except (TypeError, ValueError):
-            continue
-    return None
-
-
-def building_id_for_event(
-    body: dict[str, Any] | None, topology: ButterflyMXTopology | None
-) -> int | None:
-    """Work out which building a pushed call belongs to.
-
-    Deliveries carry no building_id -- the documented example has an access
-    point and nothing above it -- so it has to be inferred.  One building means
-    there is nothing to infer.  Otherwise whatever the payload does identify is
-    looked up in the topology.
-
-    These are assumptions.  No call delivery has been seen against a live
-    account, so which of these fields actually appears is unconfirmed; see
-    REVIEW.local.md.  Returning None is safe: the call is dropped with a warning
-    rather than attributed to the wrong building, and polling still finds it.
-    """
-    if topology is None:
-        return None
-
-    building_ids = topology.building_ids
-    if len(building_ids) == 1:
-        return building_ids[0]
-    if not isinstance(body, dict):
-        return None
-
-    access_point_id = _identifier(body, "access_point", "access_point_id")
-    if access_point_id is not None:
-        for point in topology.access_points:
-            if point.id == access_point_id:
-                return point.building_id
-
-    device_id = _identifier(body, "device", "device_id")
-    if device_id is not None:
-        for device in topology.devices:
-            if device.id == device_id:
-                return device.building_id
-        for point in topology.access_points:
-            if device_id in point.device_ids:
-                return point.building_id
-
-    unit_id = _identifier(body, "unit", "unit_id")
-    if unit_id is not None:
-        tenant = topology.tenant_for_unit(unit_id)
-        if tenant is not None:
-            return tenant.building_id
-
-    return None
-
-
-def unwrap_event(payload: Any) -> tuple[str | None, dict[str, Any] | None]:
-    """Peel the delivery envelope off, returning its resource type and body.
-
-    ButterflyMX documents deliveries as ``{"event": {"resource_type", "action",
-    "data"}}``.  The other shapes handled here are not documented and are kept
-    only because the exact envelope has never been seen against a live account;
-    they cost nothing and none of them can match the documented one.
-    """
-    if not isinstance(payload, dict):
-        return None, None
-
-    event = payload.get("event")
-    if isinstance(event, dict):
-        payload = event
-
-    resource_type = payload.get("resource_type") or payload.get("type")
-    body: Any = payload
-
-    data = payload.get("data")
-    if isinstance(data, dict):
-        resource_type = data.get("resource_type") or data.get("type") or resource_type
-        attributes = data.get("attributes")
-        body = attributes if isinstance(attributes, dict) else data
-
-    for key in ("call", "resource", "payload"):
-        nested = body.get(key) if isinstance(body, dict) else None
-        if isinstance(nested, dict):
-            body = nested
-            resource_type = resource_type or key
-            break
-
-    return (
-        str(resource_type).lower() if resource_type else None,
-        body if isinstance(body, dict) else None,
-    )
-
-
-def is_call_event(resource_type: str | None) -> bool:
-    """Return True when a delivery is about a call.
-
-    An unlabelled body is assumed to be a call, since a call is the only thing
-    this integration subscribes to.
-    """
-    return resource_type is None or resource_type in CALL_RESOURCE_TYPES
-
-
-def parse_call_payload(payload: Any, default_building_id: int | None = None) -> Call | None:
-    """Pull a Call out of a webhook body, whatever shape it arrives in."""
-    resource_type, body = unwrap_event(payload)
-    if body is None or not is_call_event(resource_type):
-        return None
-    return Call.from_api(body, default_building_id)

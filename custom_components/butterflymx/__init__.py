@@ -117,13 +117,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ButterflyMXConfigEntry) 
             pushing = False
 
         if pushing:
-            # Polling is now a safety net rather than the way calls are noticed,
-            # so stop asking every few seconds.  Nothing is scheduled yet: the
-            # coordinator only arms its timer once an entity subscribes, which
-            # happens in async_forward_entry_setups below.
+            # Push makes the doorbell immediate, so polling stops being how a
+            # call is noticed.  It does not stop: a delivery that lands while
+            # Home Assistant is restarting is gone for good, ButterflyMX
+            # promises no replay, and a registration whose URL has gone stale
+            # fails silently.  A slow poll is what catches all three.
+            #
+            # Nothing is scheduled yet: the coordinator arms its timer when the
+            # first entity subscribes, in async_forward_entry_setups below.
             calls.update_interval = timedelta(seconds=WEBHOOK_FALLBACK_SCAN_INTERVAL)
             _LOGGER.debug(
-                "Webhook push is active; call polling slowed to %ss",
+                "Webhook push registered; call polling slowed to %ss and kept "
+                "as a safety net",
                 WEBHOOK_FALLBACK_SCAN_INTERVAL,
             )
 

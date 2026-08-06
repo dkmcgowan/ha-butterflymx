@@ -5,8 +5,11 @@ Two loops with very different cadences:
 * :class:`ButterflyMXTopologyCoordinator` refreshes the account's tenants,
   access points and devices once an hour, because doors do not move around.
 * :class:`ButterflyMXCallCoordinator` polls the call log every few seconds so a
-  visitor buzzing the intercom shows up quickly.  When webhook push is enabled
-  the same coordinator accepts calls handed to it by the webhook view.
+  visitor buzzing the intercom shows up quickly.  Webhook push, where it is
+  available, does not feed calls in from the side: it asks this coordinator to
+  read the log immediately.  A delivery carries no usable call ID, so the log
+  stays the only place a call is ever read from and deduplication keeps working
+  on one set of IDs.
 """
 
 from __future__ import annotations
@@ -298,14 +301,6 @@ class ButterflyMXCallCoordinator(DataUpdateCoordinator[dict[int, Call]]):
         data = self._process_calls(calls)
         self._priming = False
         return data
-
-    async def async_handle_pushed_call(self, call: Call) -> None:
-        """Feed a call delivered by webhook into the same pipeline.
-
-        No lock is needed: :meth:`_process_calls` never awaits, so it cannot
-        interleave with a poll running on the same event loop.
-        """
-        self.async_set_updated_data(self._process_calls([call]))
 
     def _process_calls(self, calls: list[Call]) -> dict[int, Call]:
         """Deduplicate, announce and index new calls by tenant."""
