@@ -190,7 +190,15 @@ class ButterflyMXConfigFlow(ConfigFlow, domain=DOMAIN):
     async def _async_probe_account(
         self, token: dict[str, Any]
     ) -> tuple[str, str]:
-        """Call the API once to confirm the token works and name the entry."""
+        """Call the API once to confirm the token works and name the entry.
+
+        The account ID becomes the entry's unique ID, so it has to come out the
+        same on every reauthorization.  ButterflyMX promises no order for
+        tenancies, and an account can hold several, so the lowest ID is used
+        rather than whichever one happened to be listed first.  Getting this
+        wrong on a multi-building account would tell the user their own
+        credentials belong to somebody else, with no way past it.
+        """
         session = async_get_clientsession(self.hass)
         auth = ButterflyMXAuth(
             session,
@@ -204,7 +212,7 @@ class ButterflyMXConfigFlow(ConfigFlow, domain=DOMAIN):
         if not tenants:
             raise ButterflyMXError("No tenant records returned for this account")
 
-        tenant = tenants[0]
+        tenant = min(tenants, key=lambda candidate: candidate.id)
         account_id = (tenant.email or str(tenant.id)).lower()
         parts = [tenant.building_name, tenant.unit_label]
         detail = " ".join(part for part in parts if part)

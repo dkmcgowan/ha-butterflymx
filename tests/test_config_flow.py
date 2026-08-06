@@ -22,7 +22,13 @@ from custom_components.butterflymx.const import (
     OOB_REDIRECT_URI,
 )
 
-from .conftest import ACCOUNTS_URL, API_URL, TENANTS_RESPONSE
+from .conftest import (
+    ACCOUNTS_URL,
+    API_URL,
+    BUILDING_ID,
+    TENANTS_RESPONSE,
+    UNIT_ID,
+)
 
 TOKEN_URL = f"{ACCOUNTS_URL}/oauth/token"
 
@@ -146,6 +152,49 @@ async def test_flow_cannot_connect(hass: HomeAssistant, aioclient_mock) -> None:
     )
 
     assert result["errors"] == {"base": "cannot_connect"}
+
+
+def _tenants_without_email(*ids: int) -> dict:
+    """Tenancies in the given order, with no email to fall back on."""
+    return {
+        "data": [
+            {
+                "id": tenant_id,
+                "full_name": "Ada Lovelace",
+                "building_id": BUILDING_ID,
+                "building_name": "Crimson",
+                "unit": {"id": UNIT_ID, "label": "4B"},
+            }
+            for tenant_id in ids
+        ],
+        "page_info": {"current_page": 1, "total_pages": 1, "next_page": None},
+    }
+
+
+@pytest.mark.parametrize("order", [(910, 920), (920, 910)])
+async def test_account_id_does_not_depend_on_tenancy_order(
+    hass: HomeAssistant, aioclient_mock, order: tuple[int, int]
+) -> None:
+    """The unique ID has to survive a reauth, whatever order the API replies in.
+
+    With no email to key on it falls back to a tenancy ID, and an account can
+    hold several. Picking whichever came first would rename the account when
+    the order changed, and a reauth would then refuse the user's own
+    credentials as belonging to somebody else.
+    """
+    aioclient_mock.post(TOKEN_URL, json=TOKEN_RESPONSE)
+    aioclient_mock.get(f"{API_URL}/v4/tenants", json=_tenants_without_email(*order))
+
+    result = await _start_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], CREDENTIALS
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_AUTH_CODE: "the-code"}
+    )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["result"].unique_id == "910"
 
 
 async def test_duplicate_account_aborts(
