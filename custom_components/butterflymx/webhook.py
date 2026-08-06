@@ -26,7 +26,7 @@ from .const import (
     WEBHOOK_RESOURCE_CALL,
 )
 from .exceptions import ButterflyMXError
-from .models import Call
+from .models import ButterflyMXTopology, Call
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -136,10 +136,13 @@ class ButterflyMXWebhookManager:
                     "Could not remove ButterflyMX webhook %s: %s", integration_id, err
                 )
         self._registered_ids.clear()
-        self.hass.config_entries.async_update_entry(
-            self.entry,
-            data={**self.entry.data, CONF_WEBHOOK_INTEGRATION_IDS: {}},
-        )
+        # Only write when there is something to clear, so an unload that had no
+        # registrations does not touch the entry at all.
+        if self.entry.data.get(CONF_WEBHOOK_INTEGRATION_IDS):
+            self.hass.config_entries.async_update_entry(
+                self.entry,
+                data={**self.entry.data, CONF_WEBHOOK_INTEGRATION_IDS: {}},
+            )
 
     async def _async_handle_webhook(
         self, hass: HomeAssistant, webhook_id: str, request: Request
@@ -154,21 +157,96 @@ class ButterflyMXWebhookManager:
         _LOGGER.debug("ButterflyMX webhook payload: %s", payload)
         runtime = getattr(self.entry, "runtime_data", None)
 
-        # Webhook bodies do not reliably carry a building_id; when the account
-        # only covers one building there is no ambiguity to resolve.
-        default_building_id: int | None = None
-        if runtime is not None and runtime.topology.data is not None:
-            building_ids = runtime.topology.data.building_ids
-            if len(building_ids) == 1:
-                default_building_id = building_ids[0]
+        resource_type, body = unwrap_event(payload)
+        if not is_call_event(resource_type):
+            # Only calls are subscribed to, so anything else is somebody else's
+            # registration reaching us and is not worth complaining about.
+            _LOGGER.debug("Ignoring ButterflyMX %s webhook", resource_type)
+            return Response(status=200)
 
-        call = parse_call_payload(payload, default_building_id)
+        topology = runtime.topology.data if runtime is not None else None
+        call = parse_call_payload(payload, building_id_for_event(body, topology))
         if call is None:
+            # Answer 200 regardless: a non-200 has ButterflyMX retry, and a
+            # payload we cannot read will not read any better the second time.
+            _LOGGER.warning(
+                "Ignoring a ButterflyMX webhook that could not be read as a "
+                "call; the doorbell did not fire for it. Payload: %s",
+                payload,
+            )
             return Response(status=200)
 
         if runtime is not None:
             await runtime.calls.async_handle_pushed_call(call)
         return Response(status=200)
+
+
+def _identifier(body: dict[str, Any], *names: str) -> int | None:
+    """Read an ID that may arrive bare or wrapped in an object.
+
+    The one documented delivery carries ``"access_point": 22177636`` rather than
+    a nested object, while the REST API nests the same things, so both are
+    accepted.
+    """
+    for name in names:
+        value: Any = body.get(name)
+        if isinstance(value, dict):
+            value = value.get("id")
+        if value is None:
+            continue
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def building_id_for_event(
+    body: dict[str, Any] | None, topology: ButterflyMXTopology | None
+) -> int | None:
+    """Work out which building a pushed call belongs to.
+
+    Deliveries carry no building_id -- the documented example has an access
+    point and nothing above it -- so it has to be inferred.  One building means
+    there is nothing to infer.  Otherwise whatever the payload does identify is
+    looked up in the topology.
+
+    These are assumptions.  No call delivery has been seen against a live
+    account, so which of these fields actually appears is unconfirmed; see
+    REVIEW.local.md.  Returning None is safe: the call is dropped with a warning
+    rather than attributed to the wrong building, and polling still finds it.
+    """
+    if topology is None:
+        return None
+
+    building_ids = topology.building_ids
+    if len(building_ids) == 1:
+        return building_ids[0]
+    if not isinstance(body, dict):
+        return None
+
+    access_point_id = _identifier(body, "access_point", "access_point_id")
+    if access_point_id is not None:
+        for point in topology.access_points:
+            if point.id == access_point_id:
+                return point.building_id
+
+    device_id = _identifier(body, "device", "device_id")
+    if device_id is not None:
+        for device in topology.devices:
+            if device.id == device_id:
+                return device.building_id
+        for point in topology.access_points:
+            if device_id in point.device_ids:
+                return point.building_id
+
+    unit_id = _identifier(body, "unit", "unit_id")
+    if unit_id is not None:
+        tenant = topology.tenant_for_unit(unit_id)
+        if tenant is not None:
+            return tenant.building_id
+
+    return None
 
 
 def unwrap_event(payload: Any) -> tuple[str | None, dict[str, Any] | None]:

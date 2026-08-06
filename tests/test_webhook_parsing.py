@@ -4,7 +4,17 @@ from __future__ import annotations
 
 import pytest
 
-from custom_components.butterflymx.webhook import parse_call_payload
+from custom_components.butterflymx.models import (
+    AccessPoint,
+    ButterflyMXTopology,
+    Device,
+    Tenant,
+    Unit,
+)
+from custom_components.butterflymx.webhook import (
+    building_id_for_event,
+    parse_call_payload,
+)
 
 
 def _documented(resource_type: str, data: dict) -> dict:
@@ -100,3 +110,41 @@ def test_junk_is_ignored(payload: object) -> None:
 def test_missing_building_without_default_is_dropped() -> None:
     """Without a building we cannot attribute the call."""
     assert parse_call_payload({"id": 5}) is None
+
+
+TOPOLOGY = ButterflyMXTopology(
+    tenants=[
+        Tenant(id=10, building_id=1, unit=Unit(id=101)),
+        Tenant(id=20, building_id=2, unit=Unit(id=202)),
+    ],
+    access_points=[
+        AccessPoint(id=900, building_id=2, name="B2 Door", device_ids=(555,))
+    ],
+    devices=[Device(id=777, building_id=1, name="B1 Lock")],
+)
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        # The documented delivery carries a bare access point ID.
+        ({"access_point": 900}, 2),
+        ({"device": {"id": 777}}, 1),
+        # A device reachable only through an access point still places it.
+        ({"device_id": 555}, 2),
+        ({"unit_id": 202}, 2),
+        # Nothing identifiable: no building rather than the wrong one.
+        ({"id": 1}, None),
+    ],
+)
+async def test_building_is_inferred_for_multi_building_accounts(
+    body: dict, expected: int | None
+) -> None:
+    """Deliveries carry no building_id, so it has to come from the topology."""
+    assert building_id_for_event(body, TOPOLOGY) == expected
+
+
+def test_single_building_needs_no_clues() -> None:
+    """With one building there is nothing to work out."""
+    single = ButterflyMXTopology(tenants=[Tenant(id=10, building_id=42)])
+    assert building_id_for_event({}, single) == 42
