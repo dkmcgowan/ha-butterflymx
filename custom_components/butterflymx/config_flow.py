@@ -16,6 +16,7 @@ import logging
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from homeassistant.components import webhook
 from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlow,
@@ -25,6 +26,7 @@ from homeassistant.config_entries import (
 from homeassistant.core import callback
 from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.network import NoURLAvailableError, get_url
 import voluptuous as vol
 
 from .api import ButterflyMXClient
@@ -46,6 +48,7 @@ from .const import (
     CONF_REDIRECT_URI,
     CONF_RELOCK_DELAY,
     CONF_TOKEN,
+    CONF_WEBHOOK_ID,
     DEFAULT_CALL_SCAN_INTERVAL,
     DEFAULT_RELOCK_DELAY,
     DOMAIN,
@@ -253,6 +256,10 @@ class ButterflyMXConfigFlow(ConfigFlow, domain=DOMAIN):
             CONF_CLIENT_SECRET: self._client_secret,
             CONF_REDIRECT_URI: self._redirect_uri,
             CONF_TOKEN: token,
+            # Allocated now, whether or not push is ever switched on, so the
+            # options screen can show the exact URL that would be registered
+            # rather than describing one.
+            CONF_WEBHOOK_ID: webhook.async_generate_id(),
         }
 
         await self.async_set_unique_id(account_id)
@@ -347,4 +354,33 @@ class ButterflyMXOptionsFlow(OptionsFlow):
                 ): selector.BooleanSelector(),
             }
         )
-        return self.async_show_form(step_id="init", data_schema=schema)
+        return self.async_show_form(
+            step_id="init",
+            data_schema=schema,
+            description_placeholders={"webhook_url": self._webhook_url()},
+        )
+
+    def _webhook_url(self) -> str:
+        """Describe the URL ButterflyMX would be told to push to.
+
+        Showing the real thing lets somebody check it is reachable before
+        turning push on, instead of finding out by missing a visitor.
+        """
+        try:
+            base = get_url(self.hass, allow_internal=False, prefer_external=True)
+        except NoURLAvailableError:
+            return (
+                "unavailable - Home Assistant has no external URL configured, "
+                "so ButterflyMX would have nowhere to push to"
+            )
+
+        webhook_id = self.config_entry.data.get(CONF_WEBHOOK_ID)
+        if not webhook_id:
+            # Entries created before this was allocated up front.  Settle on one
+            # now so the URL shown is the URL registered.
+            webhook_id = webhook.async_generate_id()
+            self.hass.config_entries.async_update_entry(
+                self.config_entry,
+                data={**self.config_entry.data, CONF_WEBHOOK_ID: webhook_id},
+            )
+        return f"{base}{webhook.async_generate_path(webhook_id)}"

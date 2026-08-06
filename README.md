@@ -150,7 +150,30 @@ away from your phone.
 | --- | --- | --- |
 | Call polling interval | 10 seconds | How quickly a visitor call reaches you. Lower is faster and makes more requests. |
 | Show door as unlocked for | 5 seconds | How long the lock shows as unlocked afterwards. Cosmetic; it does not change how long the door stays open. |
-| Webhook push | Off | Advanced. If your Home Assistant is reachable from the internet, ButterflyMX can notify it instantly instead of Home Assistant checking every few seconds. Experimental. |
+| Webhook push | Off | Advanced. If your Home Assistant is reachable from the internet, ButterflyMX can tell it about a call the moment one happens, instead of waiting for the next check. Experimental. See below. |
+
+### Webhook push
+
+Off by default, and polling works perfectly well without it. Turning it on
+makes the doorbell effectively instant.
+
+The settings screen shows you the exact address ButterflyMX will be told to
+send to, something like
+`https://your-home-assistant.example.com/api/webhook/a1b2c3...`. **Check that
+address is reachable from outside your network before you switch this on.** If
+Home Assistant has no external address configured, the setting says so and
+there is no point enabling it.
+
+Polling does not stop when push is on, it just slows down. A call delivered
+while Home Assistant happens to be restarting is gone for good — ButterflyMX
+does not send it again — so a slow check stays running to catch anything push
+misses.
+
+**If you turn it on and doorbells stop arriving**, push is not reaching you.
+Turn the setting back off, confirm the doorbell works again on polling alone,
+and then look at why the address is not reachable: a reverse proxy, a firewall,
+or an external URL in Home Assistant that no longer matches reality. Turning it
+off is always safe.
 
 ## Questions
 
