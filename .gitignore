@@ -27,7 +27,8 @@ config/
 !custom_components/
 
 # Developer tooling output; may contain credentials or account data
-scripts/.env.deploy
+scripts/.env
+scripts/.env.*
 scripts/.bmx-token-*.json
 scripts/probe-output-*.json
 

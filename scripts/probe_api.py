@@ -23,8 +23,14 @@ Standard library only, so it runs with any Python 3.11+ and needs no virtualenv.
 Usage:
 
     export BMX_CLIENT_ID=...        # or pass --client-id
-    export BMX_CLIENT_SECRET=...    # or pass --client-secret
+    export BMX_CLIENT_SECRET=...    # optional; omit to use PKCE instead
     python scripts/probe_api.py --env sandbox
+
+A client secret is only needed for a confidential client, which is what the
+developer documentation describes.  Leave it unset and the script uses
+authorization code with PKCE instead, the way the official mobile app talks to
+these same endpoints.  If a client is registered as public, PKCE is the only
+thing that will work; if it is confidential, the secret is required.
 
 On the first run it prints a ButterflyMX sign-in link, waits for you to paste
 back the authorization code, and caches the resulting token in
@@ -39,7 +45,9 @@ into an issue.
 from __future__ import annotations
 
 import argparse
+import base64
 from collections.abc import Iterable
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -76,23 +84,31 @@ EXPECTED_KEYS = {
 }
 
 REDACT_KEYS = {
+    # Credentials and access tools.
     "code",
     "pin",
     "pin_code",
     "passcode",
     "qr_code",
     "secret",
+    "access_token",
+    "refresh_token",
+    "client_id",
+    "client_secret",
+    "serial_number",
+    # Who the resident is.
     "email",
     "first_name",
     "last_name",
     "full_name",
     "phone",
     "phone_number",
-    "serial_number",
-    "access_token",
-    "refresh_token",
-    "client_id",
-    "client_secret",
+    # Where they live.  A transcript is meant to be safe to paste into an issue,
+    # and building plus unit plus floor is a home address.  IDs are kept, which
+    # is what reading the transcript actually needs.
+    "building_name",
+    "label",
+    "floor",
 }
 
 
@@ -178,16 +194,38 @@ def _normalize(token: dict[str, Any]) -> dict[str, Any]:
     return token
 
 
-def authorize(accounts_url: str, client_id: str, client_secret: str) -> dict[str, Any]:
-    """Walk the authorization-code flow interactively."""
-    query = urllib.parse.urlencode(
-        {
-            "client_id": client_id,
-            "client_secret": client_secret,
-            "redirect_uri": OOB_REDIRECT_URI,
-            "response_type": "code",
-        }
-    )
+def _pkce_pair() -> tuple[str, str]:
+    """Return a PKCE ``(verifier, S256 challenge)`` pair."""
+    verifier = base64.urlsafe_b64encode(os.urandom(64)).decode().rstrip("=")
+    digest = hashlib.sha256(verifier.encode("ascii")).digest()
+    return verifier, base64.urlsafe_b64encode(digest).decode().rstrip("=")
+
+
+def authorize(
+    accounts_url: str, client_id: str, client_secret: str | None
+) -> dict[str, Any]:
+    """Walk the authorization-code flow interactively.
+
+    Two shapes are supported, because ButterflyMX registers both kinds of
+    client.  With a secret this is the confidential flow the developer
+    documentation describes.  Without one it falls back to PKCE, which is what
+    the official mobile app uses against these same endpoints.
+    """
+    verifier: str | None = None
+    params: dict[str, str] = {
+        "client_id": client_id,
+        "redirect_uri": OOB_REDIRECT_URI,
+        "response_type": "code",
+    }
+    if client_secret:
+        params["client_secret"] = client_secret
+    else:
+        verifier, challenge = _pkce_pair()
+        params["code_challenge"] = challenge
+        params["code_challenge_method"] = "S256"
+        print("  no client secret given; using PKCE")
+
+    query = urllib.parse.urlencode(params)
     print("\nOpen this URL, sign in to ButterflyMX and approve access:\n")
     print(f"  {accounts_url}/oauth/authorize?{query}\n")
     code = input("Paste the authorization code (or the whole redirect URL): ").strip()
@@ -197,26 +235,31 @@ def authorize(accounts_url: str, client_id: str, client_secret: str) -> dict[str
         if found:
             code = found[0]
 
-    status, payload = _request(
-        "POST",
-        f"{accounts_url}/oauth/token",
-        data={
-            "grant_type": "authorization_code",
-            "code": code,
-            "client_id": client_id,
-            "client_secret": client_secret,
-            "redirect_uri": OOB_REDIRECT_URI,
-        },
-    )
+    exchange: dict[str, str] = {
+        "grant_type": "authorization_code",
+        "code": code,
+        "client_id": client_id,
+        "redirect_uri": OOB_REDIRECT_URI,
+    }
+    if client_secret:
+        exchange["client_secret"] = client_secret
+    if verifier:
+        exchange["code_verifier"] = verifier
+
+    status, payload = _request("POST", f"{accounts_url}/oauth/token", data=exchange)
     if status != 200 or not isinstance(payload, dict) or "access_token" not in payload:
         raise ProbeError(f"Token exchange failed (HTTP {status}): {payload}")
     return _normalize(payload)
 
 
 def refresh(
-    accounts_url: str, client_id: str, client_secret: str, token: dict[str, Any]
+    accounts_url: str, client_id: str, client_secret: str | None, token: dict[str, Any]
 ) -> dict[str, Any]:
-    """Exchange the refresh token for a new pair."""
+    """Exchange the refresh token for a new pair.
+
+    No client_secret: both the documentation and the official app leave it out
+    of the refresh grant.
+    """
     status, payload = _request(
         "POST",
         f"{accounts_url}/oauth/token",
@@ -224,7 +267,6 @@ def refresh(
             "grant_type": "refresh_token",
             "refresh_token": token["refresh_token"],
             "client_id": client_id,
-            "client_secret": client_secret,
         },
     )
     if status != 200 or not isinstance(payload, dict) or "access_token" not in payload:
@@ -595,8 +637,8 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    if not args.client_id or not args.client_secret:
-        parser.error("set BMX_CLIENT_ID and BMX_CLIENT_SECRET, or pass --client-id/--client-secret")
+    if not args.client_id:
+        parser.error("set BMX_CLIENT_ID, or pass --client-id")
 
     urls = ENVIRONMENTS[args.env]
     print(f"ButterflyMX probe: {args.env}")
