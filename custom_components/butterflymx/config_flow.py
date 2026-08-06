@@ -59,18 +59,25 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def extract_code(raw: str) -> str:
-    """Return the authorization code from a pasted code or redirect URL."""
+    """Return the authorization code from a pasted code or redirect URL.
+
+    Returns an empty string when something URL-shaped was pasted but holds no
+    code, so the user is told their paste was wrong rather than being shown an
+    authorization failure for a code that was never sent.
+    """
     value = raw.strip()
     if "://" not in value and "code=" not in value:
         return value
     parsed = urlparse(value)
-    for source in (parsed.query, parsed.fragment):
+    # The last candidate covers a bare "code=..." fragment pasted on its own,
+    # which urlparse reads as a path rather than a query.
+    for source in (parsed.query, parsed.fragment, value):
         if not source:
             continue
         codes = parse_qs(source).get("code")
         if codes:
             return codes[0].strip()
-    return value
+    return ""
 
 
 class ButterflyMXConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -290,26 +297,34 @@ class ButterflyMXOptionsFlow(OptionsFlow):
                     default=options.get(
                         CONF_CALL_SCAN_INTERVAL, DEFAULT_CALL_SCAN_INTERVAL
                     ),
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=MIN_CALL_SCAN_INTERVAL,
-                        max=MAX_CALL_SCAN_INTERVAL,
-                        step=1,
-                        unit_of_measurement="s",
-                        mode=selector.NumberSelectorMode.BOX,
-                    )
+                ): vol.All(
+                    selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=MIN_CALL_SCAN_INTERVAL,
+                            max=MAX_CALL_SCAN_INTERVAL,
+                            step=1,
+                            unit_of_measurement="s",
+                            mode=selector.NumberSelectorMode.BOX,
+                        )
+                    ),
+                    # A number selector hands back a float, and these are whole
+                    # seconds, so keep 10 out of the entry as 10.0.
+                    vol.Coerce(int),
                 ),
                 vol.Required(
                     CONF_RELOCK_DELAY,
                     default=options.get(CONF_RELOCK_DELAY, DEFAULT_RELOCK_DELAY),
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=MIN_RELOCK_DELAY,
-                        max=MAX_RELOCK_DELAY,
-                        step=1,
-                        unit_of_measurement="s",
-                        mode=selector.NumberSelectorMode.BOX,
-                    )
+                ): vol.All(
+                    selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=MIN_RELOCK_DELAY,
+                            max=MAX_RELOCK_DELAY,
+                            step=1,
+                            unit_of_measurement="s",
+                            mode=selector.NumberSelectorMode.BOX,
+                        )
+                    ),
+                    vol.Coerce(int),
                 ),
                 vol.Required(
                     CONF_ENABLE_WEBHOOK,

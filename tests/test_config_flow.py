@@ -12,10 +12,13 @@ from custom_components.butterflymx.config_flow import extract_code
 from custom_components.butterflymx.const import (
     CONF_API_URL,
     CONF_AUTH_CODE,
+    CONF_CALL_SCAN_INTERVAL,
     CONF_CLIENT_ID,
     CONF_CLIENT_SECRET,
+    CONF_ENABLE_WEBHOOK,
     CONF_ENVIRONMENT,
     CONF_REDIRECT_URI,
+    CONF_RELOCK_DELAY,
     CONF_TOKEN,
     DOMAIN,
     ENV_SANDBOX,
@@ -54,6 +57,13 @@ CREDENTIALS = {
         ("  abc123  ", "abc123"),
         ("https://my.home-assistant.io/redirect/oauth?code=xyz&state=1", "xyz"),
         ("urn:ietf:wg:oauth:2.0:oob?code=q1", "q1"),
+        ("https://example.com/cb#code=frag9", "frag9"),
+        # urlparse reads a lone query string as a path, so this needs its own pass.
+        ("code=bare42", "bare42"),
+        # URL-shaped but carrying no code: empty, so the user is told the paste
+        # was wrong rather than that ButterflyMX rejected their credentials.
+        ("https://example.com/redirect?state=1", ""),
+        ("https://example.com/redirect", ""),
     ],
 )
 def test_extract_code(raw: str, expected: str) -> None:
@@ -195,6 +205,29 @@ async def test_account_id_does_not_depend_on_tenancy_order(
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["result"].unique_id == "910"
+
+
+async def test_options_are_stored_as_whole_seconds(
+    hass: HomeAssistant, config_entry: MockConfigEntry
+) -> None:
+    """Number selectors hand back floats; these options are whole seconds."""
+    config_entry.add_to_hass(hass)
+
+    result = await hass.config_entries.options.async_init(config_entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            CONF_CALL_SCAN_INTERVAL: 15,
+            CONF_RELOCK_DELAY: 7,
+            CONF_ENABLE_WEBHOOK: False,
+        },
+    )
+
+    options = result["data"]
+    assert options[CONF_CALL_SCAN_INTERVAL] == 15
+    assert isinstance(options[CONF_CALL_SCAN_INTERVAL], int)
+    assert options[CONF_RELOCK_DELAY] == 7
+    assert isinstance(options[CONF_RELOCK_DELAY], int)
 
 
 async def test_duplicate_account_aborts(
