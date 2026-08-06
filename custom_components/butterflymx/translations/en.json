@@ -10,10 +10,10 @@
       },
       "credentials": {
         "title": "API credentials",
-        "description": "Enter the client ID and secret ButterflyMX issued to you. Leave the redirect URI at its default unless ButterflyMX registered a custom one for your application.",
+        "description": "Enter the client ID ButterflyMX issued to you. Leave the client secret empty unless you were given one - most ButterflyMX credentials do not have a secret and authorize with PKCE instead. Leave the redirect URI at its default unless ButterflyMX registered a custom one for your application.",
         "data": {
           "client_id": "Client ID",
-          "client_secret": "Client secret",
+          "client_secret": "Client secret (only if you were given one)",
           "redirect_uri": "Redirect URI"
         }
       },

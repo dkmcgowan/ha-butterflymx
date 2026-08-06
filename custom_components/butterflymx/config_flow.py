@@ -28,7 +28,12 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 import voluptuous as vol
 
 from .api import ButterflyMXClient
-from .auth import ButterflyMXAuth, async_exchange_code, build_authorize_url
+from .auth import (
+    ButterflyMXAuth,
+    async_exchange_code,
+    build_authorize_url,
+    new_code_verifier,
+)
 from .const import (
     CONF_ACCOUNTS_URL,
     CONF_API_URL,
@@ -94,6 +99,9 @@ class ButterflyMXConfigFlow(ConfigFlow, domain=DOMAIN):
         self._client_secret: str = ""
         self._redirect_uri: str = OOB_REDIRECT_URI
         self._reauth_entry: ConfigEntry | None = None
+        # One verifier per flow.  It has to survive from building the authorize
+        # URL to redeeming the code the user pastes back.
+        self._code_verifier: str = new_code_verifier()
 
     @staticmethod
     @callback
@@ -133,7 +141,7 @@ class ButterflyMXConfigFlow(ConfigFlow, domain=DOMAIN):
         """Collect the ButterflyMX API client credentials."""
         if user_input is not None:
             self._client_id = user_input[CONF_CLIENT_ID].strip()
-            self._client_secret = user_input[CONF_CLIENT_SECRET].strip()
+            self._client_secret = (user_input.get(CONF_CLIENT_SECRET) or "").strip()
             self._redirect_uri = (
                 user_input.get(CONF_REDIRECT_URI) or OOB_REDIRECT_URI
             ).strip()
@@ -142,7 +150,9 @@ class ButterflyMXConfigFlow(ConfigFlow, domain=DOMAIN):
         schema = vol.Schema(
             {
                 vol.Required(CONF_CLIENT_ID, default=self._client_id): str,
-                vol.Required(CONF_CLIENT_SECRET, default=self._client_secret): str,
+                # Optional: ButterflyMX issues public clients, which authorize
+                # with PKCE and have no secret at all.
+                vol.Optional(CONF_CLIENT_SECRET, default=self._client_secret): str,
                 vol.Optional(CONF_REDIRECT_URI, default=self._redirect_uri): str,
             }
         )
@@ -154,7 +164,11 @@ class ButterflyMXConfigFlow(ConfigFlow, domain=DOMAIN):
         """Show the authorize URL and accept the resulting code."""
         errors: dict[str, str] = {}
         authorize_url = build_authorize_url(
-            self._accounts_url, self._client_id, self._client_secret, self._redirect_uri
+            self._accounts_url,
+            self._client_id,
+            self._code_verifier,
+            self._client_secret or None,
+            self._redirect_uri,
         )
 
         if user_input is not None:
@@ -168,8 +182,9 @@ class ButterflyMXConfigFlow(ConfigFlow, domain=DOMAIN):
                         session,
                         self._accounts_url,
                         self._client_id,
-                        self._client_secret,
                         code,
+                        self._code_verifier,
+                        self._client_secret or None,
                         self._redirect_uri,
                     )
                     account_id, account_name = await self._async_probe_account(token)
@@ -262,7 +277,7 @@ class ButterflyMXConfigFlow(ConfigFlow, domain=DOMAIN):
         self._accounts_url = entry_data[CONF_ACCOUNTS_URL]
         self._api_url = entry_data[CONF_API_URL]
         self._client_id = entry_data[CONF_CLIENT_ID]
-        self._client_secret = entry_data[CONF_CLIENT_SECRET]
+        self._client_secret = entry_data.get(CONF_CLIENT_SECRET) or ""
         self._redirect_uri = entry_data.get(CONF_REDIRECT_URI, OOB_REDIRECT_URI)
         return await self.async_step_reauth_confirm()
 

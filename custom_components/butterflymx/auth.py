@@ -1,16 +1,24 @@
 """OAuth2 token handling for ButterflyMX.
 
-ButterflyMX issues access tokens that are valid for 24 hours and refresh tokens
-that do not expire.  A refresh returns a *new* refresh token as well, so both
-values have to be persisted every time.  A 401 from the token endpoint means the
-grant is gone for good and the user has to link their account again.
+Authorization uses PKCE.  ButterflyMX issues public clients, which have no
+secret to authenticate with, so the code challenge is what proves the code came
+back to whoever asked for it.  A client secret is accepted if one is configured,
+for the confidential clients the documentation describes, but it is optional.
+
+Access tokens are valid for 24 hours.  A refresh returns a *new* refresh token
+along with them, confirmed against a live account, so both values have to be
+persisted every time or the next refresh fails.  A 401 from the token endpoint
+means the grant is gone for good and the user has to link their account again.
 """
 
 from __future__ import annotations
 
 import asyncio
+from base64 import urlsafe_b64encode
 from collections.abc import Awaitable, Callable
+import hashlib
 import logging
+import secrets
 import time
 from typing import Any
 from urllib.parse import urlencode
@@ -31,27 +39,45 @@ _LOGGER = logging.getLogger(__name__)
 TokenUpdater = Callable[[dict[str, Any]], Awaitable[None]]
 
 
+def new_code_verifier() -> str:
+    """Return a fresh PKCE code verifier."""
+    return secrets.token_urlsafe(64)
+
+
+def code_challenge_for(verifier: str) -> str:
+    """Return the S256 challenge for a PKCE verifier."""
+    digest = hashlib.sha256(verifier.encode("ascii")).digest()
+    return urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+
+
 def build_authorize_url(
     accounts_url: str,
     client_id: str,
-    client_secret: str,
+    code_verifier: str,
+    client_secret: str | None = None,
     redirect_uri: str = OOB_REDIRECT_URI,
 ) -> str:
     """Build the URL the user visits to authorize Home Assistant.
 
-    ButterflyMX's documented authorize URL includes ``client_secret``; their
-    authorization server expects it even though that is unusual for the
-    authorization-code grant.
+    Always uses PKCE.  ButterflyMX issues public clients -- their own app
+    authorizes this way against the same endpoint -- and a public client has no
+    secret to prove itself with, so the challenge is what ties the code to us.
+
+    The documented flow instead puts ``client_secret`` in this URL, which is
+    what a confidential client needs.  If one is configured it is sent as well,
+    since the authorization server accepts both together, but leaving it out is
+    the normal case and keeps the secret out of the browser's history.
     """
-    query = urlencode(
-        {
-            "client_id": client_id,
-            "client_secret": client_secret,
-            "redirect_uri": redirect_uri,
-            "response_type": "code",
-        }
-    )
-    return f"{accounts_url.rstrip('/')}{OAUTH2_AUTHORIZE_PATH}?{query}"
+    params = {
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "response_type": "code",
+        "code_challenge": code_challenge_for(code_verifier),
+        "code_challenge_method": "S256",
+    }
+    if client_secret:
+        params["client_secret"] = client_secret
+    return f"{accounts_url.rstrip('/')}{OAUTH2_AUTHORIZE_PATH}?{urlencode(params)}"
 
 
 def normalize_token(raw: dict[str, Any]) -> dict[str, Any]:
@@ -88,22 +114,22 @@ async def async_exchange_code(
     session: ClientSession,
     accounts_url: str,
     client_id: str,
-    client_secret: str,
     code: str,
+    code_verifier: str,
+    client_secret: str | None = None,
     redirect_uri: str = OOB_REDIRECT_URI,
 ) -> dict[str, Any]:
     """Exchange an authorization code for a token pair."""
-    return await _async_token_request(
-        session,
-        accounts_url,
-        {
-            "grant_type": "authorization_code",
-            "code": code,
-            "client_id": client_id,
-            "client_secret": client_secret,
-            "redirect_uri": redirect_uri,
-        },
-    )
+    data = {
+        "grant_type": "authorization_code",
+        "code": code,
+        "client_id": client_id,
+        "code_verifier": code_verifier,
+        "redirect_uri": redirect_uri,
+    }
+    if client_secret:
+        data["client_secret"] = client_secret
+    return await _async_token_request(session, accounts_url, data)
 
 
 async def _async_token_request(

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+from base64 import urlsafe_b64encode
+import hashlib
 import time
 
 from homeassistant.core import HomeAssistant
@@ -13,6 +15,8 @@ from custom_components.butterflymx.auth import (
     ButterflyMXAuth,
     async_exchange_code,
     build_authorize_url,
+    code_challenge_for,
+    new_code_verifier,
     normalize_token,
 )
 from custom_components.butterflymx.exceptions import (
@@ -25,14 +29,43 @@ from .conftest import ACCOUNTS_URL, make_token
 TOKEN_URL = f"{ACCOUNTS_URL}/oauth/token"
 
 
-def test_build_authorize_url() -> None:
-    """The authorize URL carries every parameter ButterflyMX documents."""
-    url = build_authorize_url(ACCOUNTS_URL, "cid", "secret", "urn:ietf:wg:oauth:2.0:oob")
+def test_build_authorize_url_uses_pkce_and_carries_no_secret() -> None:
+    """The normal case: a public client, so nothing secret goes in the URL."""
+    verifier = new_code_verifier()
+    url = build_authorize_url(ACCOUNTS_URL, "cid", verifier)
+
     assert url.startswith(f"{ACCOUNTS_URL}/oauth/authorize?")
     assert "client_id=cid" in url
-    assert "client_secret=secret" in url
     assert "response_type=code" in url
+    assert "code_challenge_method=S256" in url
+    assert f"code_challenge={code_challenge_for(verifier)}" in url
     assert "redirect_uri=urn%3Aietf%3Awg%3Aoauth%3A2.0%3Aoob" in url
+    # The whole point: this URL goes in a browser's history.
+    assert "client_secret" not in url
+    assert verifier not in url
+
+
+def test_build_authorize_url_still_sends_a_secret_when_there_is_one() -> None:
+    """A confidential client keeps working, with PKCE alongside."""
+    url = build_authorize_url(ACCOUNTS_URL, "cid", new_code_verifier(), "secret")
+
+    assert "client_secret=secret" in url
+    assert "code_challenge_method=S256" in url
+
+
+def test_code_challenge_is_s256_of_the_verifier() -> None:
+    """The challenge must be the unpadded base64url SHA-256 of the verifier."""
+    expected = (
+        urlsafe_b64encode(hashlib.sha256(b"abc123").digest()).decode().rstrip("=")
+    )
+    assert code_challenge_for("abc123") == expected
+    assert "=" not in code_challenge_for(new_code_verifier())
+
+
+def test_each_flow_gets_its_own_verifier() -> None:
+    """Reusing a verifier across flows would defeat the point of PKCE."""
+    assert new_code_verifier() != new_code_verifier()
+    assert len(new_code_verifier()) >= 43  # RFC 7636 minimum
 
 
 def test_normalize_token_adds_absolute_expiry() -> None:
@@ -66,7 +99,9 @@ async def test_exchange_code(hass: HomeAssistant, aioclient_mock) -> None:
         },
     )
     session = async_get_clientsession(hass)
-    token = await async_exchange_code(session, ACCOUNTS_URL, "cid", "secret", "code")
+    token = await async_exchange_code(
+        session, ACCOUNTS_URL, "cid", "code", "verifier-1"
+    )
 
     assert token["access_token"] == "access-1"
     assert token["expires_at"] > time.time()
@@ -79,7 +114,7 @@ async def test_exchange_code_rejected(hass: HomeAssistant, aioclient_mock) -> No
     session = async_get_clientsession(hass)
 
     with pytest.raises(ButterflyMXAuthError):
-        await async_exchange_code(session, ACCOUNTS_URL, "cid", "secret", "bad")
+        await async_exchange_code(session, ACCOUNTS_URL, "cid", "bad", "verifier-1")
 
 
 async def test_exchange_code_server_error(hass: HomeAssistant, aioclient_mock) -> None:
@@ -88,7 +123,7 @@ async def test_exchange_code_server_error(hass: HomeAssistant, aioclient_mock) -
     session = async_get_clientsession(hass)
 
     with pytest.raises(ButterflyMXConnectionError):
-        await async_exchange_code(session, ACCOUNTS_URL, "cid", "secret", "code")
+        await async_exchange_code(session, ACCOUNTS_URL, "cid", "code", "verifier-1")
 
 
 async def test_valid_token_is_not_refreshed(hass: HomeAssistant, aioclient_mock) -> None:
