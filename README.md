@@ -13,8 +13,10 @@ someone is let in after dark.
 > **Unofficial.** This is a community project. It is not built, endorsed or
 > supported by ButterflyMX.
 >
-> Parts of it were written with the help of Claude Code. It has not yet been
-> tested against a live ButterflyMX account.
+> Parts of it were written with the help of Claude Code. Every file has since
+> been read and reviewed line by line, and every request it makes has been run
+> against a real ButterflyMX account: signing in, listing doors, reading the
+> call log, receiving a pushed call, and opening a door.
 
 ## What you get
 
@@ -32,24 +34,24 @@ Names will match your own building and unit.
 
 ## Before you start
 
-You need three things:
+You need two things:
 
 1. **A ButterflyMX account** that is a resident of the building, the same login
    you use in their app. The integration only ever acts as you, and can only
    open doors you can already open.
 2. **Home Assistant 2025.2 or newer.**
-3. **API credentials from ButterflyMX**, meaning a client ID and secret.
 
-That third item is the awkward one, and worth being upfront about. ButterflyMX
-issues API credentials through their developer program rather than handing them
-out in the app, so you have to request them at
-<https://apidocs.butterflymx.com/docs/getting-started>. You sign in with your own
-account afterwards, and the integration only ever holds your own access, but
-getting the credentials in the first place is an extra step that has nothing to
-do with Home Assistant.
+**And possibly a third: a ButterflyMX client ID.** Whether you need one depends
+on this copy of the integration. If it ships with a client ID, setup just asks
+you to sign in and you can skip the rest of this section. If it does not, setup
+asks you for one, and you have to request it from ButterflyMX's developer
+programme at <https://apidocs.butterflymx.com/docs/getting-started>.
 
-We have asked ButterflyMX whether this can be simplified so that residents can
-just sign in. If that changes, this section gets shorter and this note goes away.
+Either way you sign in with your own account and the integration only ever holds
+your own access. A client ID is not a password and is not treated as one: it
+identifies the application, not you, and ButterflyMX issues it as a public
+client, so there is no secret to go with it. If you were given a client secret
+as well, there is a field for it, but most credentials do not have one.
 
 ## Install
 
@@ -69,19 +71,18 @@ Copy the `custom_components/butterflymx` folder into your Home Assistant
 
 ## Set it up
 
-Four short steps.
+Two short steps, or three if you are supplying your own client ID.
 
-1. **Pick your region.** Choose **Production** unless you were specifically given
-   sandbox credentials for testing.
+1. **Enter your client ID**, if you are asked for one. Leave the client secret
+   empty unless ButterflyMX gave you one, and leave the redirect URI alone
+   unless they registered a custom one. If setup goes straight to signing in,
+   this copy already has a client ID and there is nothing to enter.
 
-2. **Enter your client ID and secret.** Leave the redirect URI alone unless
-   ButterflyMX gave you a custom one.
-
-3. **Sign in to ButterflyMX.** Home Assistant shows you a link. Open it, sign in
+2. **Sign in to ButterflyMX.** Home Assistant shows you a link. Open it, sign in
    with your normal ButterflyMX account, and approve access. This happens on
    ButterflyMX's own site, so your password is never typed into Home Assistant.
 
-4. **Paste the code back.** ButterflyMX shows you a short authorization code.
+3. **Paste the code back.** ButterflyMX shows you a short authorization code.
    Copy it into Home Assistant and you are done. If you were sent to a web
    address instead of shown a code, paste the whole address and the integration
    will pick the code out of it.
@@ -290,17 +291,27 @@ setup without re-importing changed modules.
 
 ### How it talks to ButterflyMX
 
-Access tokens last 24 hours and refresh tokens do not expire. The integration
-refreshes a few minutes before expiry and stores the rotated pair, since
-ButterflyMX issues a new refresh token every time. A rejected refresh raises a
-re-authentication flow.
+Authorization is the OAuth authorization-code flow with PKCE. ButterflyMX issues
+public clients, so there is no client secret in the flow and nothing sensitive in
+the URL you open in your browser. Access tokens last 24 hours. The integration
+refreshes a few minutes before expiry and stores both halves of the new pair,
+because ButterflyMX rotates the refresh token every time. A rejected refresh
+raises a re-authentication flow.
 
-ButterflyMX publishes no rate limits, so the client stays well inside any
-plausible one: at most 4 requests in flight spaced 250 ms apart, exponential
-backoff with jitter on `429` and `5xx` honoring `Retry-After`, and building
-topology refreshed hourly. Door releases are never retried, because a retry could
-open a door twice, and repeated releases of the same door within 3 seconds are
-dropped.
+There is no client-side request throttling, deliberately. ButterflyMX publishes
+no rate limits and returns no rate-limit headers, requests are issued one at a
+time rather than in parallel, and pacing them only added delay. What remains is
+what matters when something goes wrong: exponential backoff with jitter on `429`
+and `5xx`, honoring `Retry-After`. Door releases are never retried, because a
+retry could open a door twice, and repeated releases of the same door within
+3 seconds are dropped. Building topology is refreshed hourly.
+
+Calls are read from the call log, always. When webhook push is on, a delivery
+does not carry the call: it only tells the integration to read the log
+immediately. A delivery has no call ID the REST API recognises, no timestamp,
+and nothing saying whether anyone answered, so using it as data would mean
+ringing the doorbell twice for one visitor and knowing less about it. The log is
+the single source of truth and push just makes it prompt.
 
 Issues and pull requests are welcome.
 

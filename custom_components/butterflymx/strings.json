@@ -1,16 +1,9 @@
 {
   "config": {
     "step": {
-      "user": {
-        "title": "ButterflyMX",
-        "description": "Choose which ButterflyMX environment your API credentials belong to.",
-        "data": {
-          "environment": "Environment"
-        }
-      },
       "credentials": {
-        "title": "API credentials",
-        "description": "Enter the client ID ButterflyMX issued to you. Leave the client secret empty unless you were given one - most ButterflyMX credentials do not have a secret and authorize with PKCE instead. Leave the redirect URI at its default unless ButterflyMX registered a custom one for your application.",
+        "title": "ButterflyMX API credentials",
+        "description": "This copy of the integration does not ship a client ID, so you need one of your own from ButterflyMX's developer programme. Leave the client secret empty unless you were given one - most ButterflyMX credentials do not have a secret and authorize with PKCE instead. Leave the redirect URI at its default unless ButterflyMX registered a custom one for your application.",
         "data": {
           "client_id": "Client ID",
           "client_secret": "Client secret (only if you were given one)",
@@ -51,14 +44,6 @@
           "relock_delay": "Show door as unlocked for",
           "enable_webhook": "Also let ButterflyMX push calls (needs an externally reachable Home Assistant)"
         }
-      }
-    }
-  },
-  "selector": {
-    "environment": {
-      "options": {
-        "production": "Production",
-        "sandbox": "Sandbox"
       }
     }
   },

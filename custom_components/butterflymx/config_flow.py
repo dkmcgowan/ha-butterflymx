@@ -50,10 +50,10 @@ from .const import (
     CONF_TOKEN,
     CONF_WEBHOOK_ID,
     DEFAULT_CALL_SCAN_INTERVAL,
+    DEFAULT_CLIENT_ID,
     DEFAULT_RELOCK_DELAY,
     DOMAIN,
     ENV_PRODUCTION,
-    ENV_SANDBOX,
     ENVIRONMENTS,
     MAX_CALL_SCAN_INTERVAL,
     MAX_RELOCK_DELAY,
@@ -117,31 +117,25 @@ class ButterflyMXConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Pick which ButterflyMX environment to talk to."""
-        if user_input is not None:
-            self._environment = user_input[CONF_ENVIRONMENT]
-            urls = ENVIRONMENTS[self._environment]
-            self._accounts_url = urls[CONF_ACCOUNTS_URL]
-            self._api_url = urls[CONF_API_URL]
-            return await self.async_step_credentials()
+        """Begin setup.
 
-        schema = vol.Schema(
-            {
-                vol.Required(CONF_ENVIRONMENT, default=ENV_PRODUCTION): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=[ENV_PRODUCTION, ENV_SANDBOX],
-                        translation_key="environment",
-                        mode=selector.SelectSelectorMode.DROPDOWN,
-                    )
-                )
-            }
-        )
-        return self.async_show_form(step_id="user", data_schema=schema)
+        Always production; sandbox is a development environment and is not
+        offered.  With a client ID shipped there is nothing to ask for here, so
+        setup goes straight to signing in.
+        """
+        if DEFAULT_CLIENT_ID:
+            self._client_id = DEFAULT_CLIENT_ID
+            return await self.async_step_authorize()
+        return await self.async_step_credentials()
 
     async def async_step_credentials(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Collect the ButterflyMX API client credentials."""
+        """Ask for a client ID, when the integration does not ship one.
+
+        Reached only if DEFAULT_CLIENT_ID is empty, which means the user has to
+        have applied to ButterflyMX's developer programme themselves.
+        """
         if user_input is not None:
             self._client_id = user_input[CONF_CLIENT_ID].strip()
             self._client_secret = (user_input.get(CONF_CLIENT_SECRET) or "").strip()

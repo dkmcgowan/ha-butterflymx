@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
@@ -16,12 +18,10 @@ from custom_components.butterflymx.const import (
     CONF_CLIENT_ID,
     CONF_CLIENT_SECRET,
     CONF_ENABLE_WEBHOOK,
-    CONF_ENVIRONMENT,
     CONF_REDIRECT_URI,
     CONF_RELOCK_DELAY,
     CONF_TOKEN,
     DOMAIN,
-    ENV_SANDBOX,
     OOB_REDIRECT_URI,
 )
 
@@ -71,15 +71,57 @@ def test_extract_code(raw: str, expected: str) -> None:
     assert extract_code(raw) == expected
 
 
-async def _start_flow(hass: HomeAssistant, environment: str = ENV_SANDBOX):
+async def _start_flow(hass: HomeAssistant):
+    """Start setup.
+
+    There is no environment step: production is the only one offered. With no
+    client ID shipped, setup opens on the credentials form.
+    """
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": config_entries.SOURCE_USER}
     )
     assert result["type"] is FlowResultType.FORM
-    assert result["step_id"] == "user"
-    return await hass.config_entries.flow.async_configure(
-        result["flow_id"], {CONF_ENVIRONMENT: environment}
+    return result
+
+
+async def test_a_shipped_client_id_skips_straight_to_signing_in(
+    hass: HomeAssistant, aioclient_mock
+) -> None:
+    """With a client ID shipped there is nothing to ask for.
+
+    Setup becomes a single step: sign in and paste the code back. Nobody has to
+    apply to a developer programme first.
+    """
+    aioclient_mock.post(TOKEN_URL, json=TOKEN_RESPONSE)
+    aioclient_mock.get(f"{API_URL}/v4/tenants", json=TENANTS_RESPONSE)
+
+    with patch(
+        "custom_components.butterflymx.config_flow.DEFAULT_CLIENT_ID", "shipped-id"
+    ):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER}
+        )
+        assert result["step_id"] == "authorize"
+        assert "client_id=shipped-id" in result["description_placeholders"][
+            "authorize_url"
+        ]
+
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_AUTH_CODE: "the-code"}
+        )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_CLIENT_ID] == "shipped-id"
+
+
+async def test_setup_never_offers_sandbox(hass: HomeAssistant) -> None:
+    """Sandbox is for development and must not be reachable from the UI."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
     )
+
+    assert result["step_id"] == "credentials"
+    assert "environment" not in (result.get("data_schema").schema or {})
 
 
 async def test_full_flow(hass: HomeAssistant, aioclient_mock) -> None:

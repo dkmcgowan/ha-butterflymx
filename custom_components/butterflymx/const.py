@@ -25,8 +25,27 @@ CONF_ENABLE_WEBHOOK: Final = "enable_webhook"
 CONF_WEBHOOK_ID: Final = "webhook_id"
 CONF_WEBHOOK_INTEGRATION_IDS: Final = "webhook_integration_ids"
 
+# --- Credentials ----------------------------------------------------------------
+
+# The OAuth client this integration authorizes as.
+#
+# Leave empty and setup asks the user for their own client ID, which means
+# applying to ButterflyMX's developer programme first.  Fill it in and setup
+# skips that step entirely.
+#
+# It is not a secret and cannot be one.  ButterflyMX issues public clients, so
+# there is nothing to keep alongside it, and a client ID has to reach the
+# browser to start the authorization anyway.  The same value is sitting in
+# ButterflyMX's own Android app for anyone who cares to look.  What protects an
+# account is the sign-in and the PKCE challenge, neither of which this touches.
+DEFAULT_CLIENT_ID: Final = ""
+
 # --- Environments -------------------------------------------------------------
 
+# Production is the only environment the integration offers.  Sandbox exists for
+# development against a throwaway account and is deliberately not selectable in
+# the UI: nobody installing this wants their real building talking to it.  Use
+# scripts/probe_api.py --env sandbox for that instead.
 ENV_PRODUCTION: Final = "production"
 ENV_SANDBOX: Final = "sandbox"
 

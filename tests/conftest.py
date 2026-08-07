@@ -17,12 +17,12 @@ from custom_components.butterflymx.const import (
     CONF_REDIRECT_URI,
     CONF_TOKEN,
     DOMAIN,
-    ENV_SANDBOX,
+    ENV_PRODUCTION,
     OOB_REDIRECT_URI,
 )
 
-ACCOUNTS_URL = "https://accounts.na.sandbox.butterflymx.com"
-API_URL = "https://api.na.sandbox.butterflymx.com"
+ACCOUNTS_URL = "https://accounts.butterflymx.com"
+API_URL = "https://api.butterflymx.com"
 
 TENANT_ID = 4242
 BUILDING_ID = 777
@@ -108,21 +108,6 @@ EMPTY_CALLS_RESPONSE: dict[str, Any] = {
 }
 
 
-def call_payload(call_id: int = 900001, logged_at: str = "2026-08-04T12:00:00Z") -> dict[str, Any]:
-    """Build a single call log entry."""
-    return {
-        "id": call_id,
-        "building_id": BUILDING_ID,
-        "logged_at": logged_at,
-        "notification_type": "visitor",
-        "recipient": {"id": TENANT_ID, "type": "Tenant"},
-        "unit": {"id": UNIT_ID},
-        "device": {"id": 5005, "name": "Lobby Panel"},
-        "status": "initializing",
-        "image_url": "https://cdn.example.com/snap.png",
-    }
-
-
 @pytest.fixture
 def config_entry() -> MockConfigEntry:
     """Return a configured ButterflyMX config entry."""
@@ -131,7 +116,7 @@ def config_entry() -> MockConfigEntry:
         title="ButterflyMX Crimson 4B",
         unique_id="ada@example.com",
         data={
-            CONF_ENVIRONMENT: ENV_SANDBOX,
+            CONF_ENVIRONMENT: ENV_PRODUCTION,
             CONF_ACCOUNTS_URL: ACCOUNTS_URL,
             CONF_API_URL: API_URL,
             CONF_CLIENT_ID: "client-id",
