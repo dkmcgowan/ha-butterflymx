@@ -7,8 +7,9 @@ Use your [ButterflyMX](https://butterflymx.com) intercom from Home Assistant.
 
 Unlock the front door from a dashboard, your phone, a wall tablet or your watch.
 Get a notification the moment a visitor buzzes your unit, with a photo of who is
-standing there. Build automations around it, like turning the hall light on when
-someone is let in after dark.
+standing there. Issue a code for a delivery or a cleaner without opening the app.
+Build automations around all of it, like turning the hall light on when someone
+is let in after dark.
 
 > **Unofficial.** This is a community project. It is not built, endorsed or
 > supported by ButterflyMX.
@@ -16,7 +17,8 @@ someone is let in after dark.
 > Parts of it were written with the help of Claude Code. Every file has since
 > been read and reviewed line by line, and every request it makes has been run
 > against a real ButterflyMX account: signing in, listing doors, reading the
-> call log, receiving a pushed call, and opening a door.
+> call log, receiving a pushed call, opening a door, and issuing and revoking
+> visitor and delivery passes.
 
 ## What you get
 
@@ -31,6 +33,7 @@ them by hand.
 | `sensor.unit_4b_last_call` | When the last call happened, and who or what it came from. |
 | `event.unit_4b_door_opened` | Fires whenever one of your doors is opened, however it happened: a PIN at the keypad, a fob, someone answering the intercom in the app, or Home Assistant. |
 | `sensor.unit_4b_last_door_opened` | When a door was last opened, which one, and by what method. |
+| `sensor.unit_4b_passes` | How many visitor and delivery codes are currently valid, and what they are for. See [Visitor and delivery passes](#visitor-and-delivery-passes). |
 
 Names will match your own building and unit.
 
@@ -148,6 +151,128 @@ wall tablet by the door, or a voice assistant.
 **Other ideas:** flash a light when someone buzzes while you have music on, log
 every visitor to a calendar, or announce the door on a speaker so you hear it
 away from your phone.
+
+## Visitor and delivery passes
+
+The same two things you can create in the ButterflyMX app, with the same names:
+
+- A **delivery pass** is a single-use code. It opens every door, works once, and
+  expires after 30 days. Good for a parcel that needs to get inside the lobby.
+- A **visitor pass** is a reusable code valid over a window you choose, for
+  whichever doors you choose. Good for a cleaner, a dog walker, or family
+  staying the weekend.
+
+Both come back as a six-digit PIN plus a QR code your visitor can scan.
+
+### Where the codes live
+
+**The PIN and QR link are returned to whatever called the action, and are not
+stored in Home Assistant.** They are not in the sensor, not in its attributes,
+and so not in your history database, your logbook or a diagnostics download. A
+PIN opens your building's front door, and Home Assistant keeps state history for
+weeks by default, which is no place to leave one.
+
+You can always read a code back with `butterflymx.list_passes`, and the
+ButterflyMX app shows every pass too. So nothing is lost — the code just has to
+be asked for rather than sitting in a database.
+
+### Creating a delivery code
+
+```yaml
+actions:
+  - action: butterflymx.create_delivery_pass
+    target:
+      entity_id: sensor.unit_4b_passes
+    data:
+      name: "Amazon - Tuesday"
+    response_variable: delivery
+  - action: notify.mobile_app_my_phone
+    data:
+      title: "Delivery code"
+      message: "PIN {{ delivery.keys[0].pin_code }}"
+```
+
+The name is worth choosing well: it is what shows up in the ButterflyMX access
+log when the code gets used.
+
+### Creating a visitor code
+
+```yaml
+actions:
+  - action: butterflymx.create_visitor_pass
+    target:
+      entity_id: sensor.unit_4b_passes
+    data:
+      name: "Cleaner"
+      starts_at: "2026-08-10 09:00:00"
+      ends_at: "2026-08-10 13:00:00"
+      doors:
+        - lock.front_entrance
+    response_variable: visitor
+```
+
+Everything but `name` is optional. Leave the times out and it starts now and
+runs for four hours; leave `doors` out and it opens all of them.
+
+The response carries `pass_id`, the window, and a `keys` list with `pin_code`,
+`qr_code_url` and `instructions_url` — the last being a page you can send
+someone that explains how to use the code.
+
+### Seeing and revoking passes
+
+`sensor.unit_4b_passes` counts the passes valid right now. Its `passes`
+attribute lists them all, expired ones included, with the ID you need to revoke
+one and a `used` flag so you can tell whether a delivery code has been redeemed.
+
+```yaml
+# Read the codes back, including the PINs.
+actions:
+  - action: butterflymx.list_passes
+    target:
+      entity_id: sensor.unit_4b_passes
+    response_variable: all_passes
+```
+
+```yaml
+# Revoke one. This deletes its codes too, and cannot be undone.
+actions:
+  - action: butterflymx.revoke_pass
+    target:
+      entity_id: sensor.unit_4b_passes
+    data:
+      pass_id: 44138578
+```
+
+**Tidy up expired passes automatically:**
+
+```yaml
+automation:
+  - alias: "Remove finished ButterflyMX passes"
+    triggers:
+      - trigger: time
+        at: "03:00:00"
+    actions:
+      - repeat:
+          for_each: >
+            {{ state_attr('sensor.unit_4b_passes', 'passes')
+               | selectattr('ends_at', 'lt', now().isoformat())
+               | map(attribute='pass_id') | list }}
+          sequence:
+            - action: butterflymx.revoke_pass
+              target:
+                entity_id: sensor.unit_4b_passes
+              data:
+                pass_id: "{{ repeat.item }}"
+```
+
+### One thing these deliberately do not do
+
+ButterflyMX can email or text a code to a recipient for you when a pass is
+created. That is not offered here. An action that mails a working door code to
+whatever address it is handed is one typo away from letting a stranger into your
+building, and an automation makes typos at three in the morning without anyone
+watching. The response gives you the PIN and the QR link; send them yourself,
+through a notify service you already trust.
 
 ## Settings
 
