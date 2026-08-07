@@ -344,14 +344,14 @@ automation:
 
 Three things to expect when you set up the second one:
 
-- **The doors appear only once.** Locks are identified by the door, not by the
-  account, so the second setup finds them already claimed and leaves them
-  alone. That is what you want — one front door, one `lock.front_entrance` —
-  but it does mean the locks belong to whichever entry was added first, and
-  removing that entry takes them with it. Add it back and they return.
-- **If you share a unit, the two sets of entities arrive with nearly identical
-  names**, since both are "Unit 4B". Rename them to something you can tell
-  apart before you write any automations, as the example above assumes.
+- **Each login gets its own copy of everything, doors included.** You will have
+  two `lock.front_entrance`-ish entities for one physical door. That is
+  deliberate, not a bug: a door release is performed *as* a resident, and the
+  ButterflyMX access log records who opened it. Opening the door from your
+  lock is logged as you, and from your partner's is logged as them.
+- **If you share a unit, the two sets arrive with nearly identical names**,
+  since both are "Unit 4B". Rename them to something you can tell apart before
+  you write any automations, as the example above assumes.
 - **Passes are per login too.** Each `sensor.*_passes` shows the codes created
   by that account. A code your partner made in the app appears under theirs.
 
