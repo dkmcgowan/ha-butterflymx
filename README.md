@@ -45,7 +45,7 @@ You need two things:
 1. **A ButterflyMX account** that is a resident of the building, the same login
    you use in their app. The integration only ever acts as you, and can only
    open doors you can already open.
-2. **Home Assistant 2025.2 or newer.**
+2. **Home Assistant 2026.3 or newer.**
 
 **And possibly a third: a ButterflyMX client ID.** Whether you need one depends
 on this copy of the integration. If it ships with a client ID, setup just asks
@@ -324,6 +324,18 @@ a call and needs to be immediate; a door having been opened is worth knowing but
 does not need checking every few seconds.
 
 Issues and pull requests are welcome.
+
+## Trademarks
+
+ButterflyMX and the ButterflyMX logo are trademarks of ButterflyMX, Inc. The
+brand images in `custom_components/butterflymx/brand/` are ButterflyMX's
+property and are included only to identify the product this integration talks
+to, the way Home Assistant's own
+[brands repository](https://github.com/home-assistant/brands) does for every
+other integration.
+
+This project is not built, endorsed or supported by ButterflyMX, and the MIT
+licence below covers the code in this repository, not those images.
 
 ## License
 
