@@ -119,6 +119,62 @@ EMPTY_ACCESS_LOGS_RESPONSE: dict[str, Any] = {
     "page_info": {"current_page": 1, "total_pages": 1, "next_page": None},
 }
 
+KEYCHAIN_ID = 44138578
+VIRTUAL_KEY_ID = 45948600
+
+
+def keychain_payload(
+    keychain_id: int = KEYCHAIN_ID,
+    name: str = "Cleaner",
+    kind: str = "custom_keychain",
+    starts_at: str = "2026-08-07T12:00:00Z",
+    ends_at: str = "2026-08-07T16:00:00Z",
+    virtual_key_ids: list[int] | None = None,
+) -> dict[str, Any]:
+    """One keychain, with the field names the live API returns."""
+    return {
+        "id": keychain_id,
+        "created_at": starts_at,
+        "updated_at": starts_at,
+        "name": name,
+        "starts_at": starts_at,
+        "ends_at": ends_at,
+        "type": kind,
+        "building_id": BUILDING_ID,
+        "tenant_id": TENANT_ID,
+        "unit_id": UNIT_ID,
+        "virtual_key_ids": (
+            [VIRTUAL_KEY_ID] if virtual_key_ids is None else virtual_key_ids
+        ),
+        "access_point_ids": [ACCESS_POINT_ID],
+        "device_ids": [5005],
+    }
+
+
+def virtual_key_payload(
+    key_id: int = VIRTUAL_KEY_ID,
+    keychain_id: int = KEYCHAIN_ID,
+    usage_count: int = 0,
+) -> dict[str, Any]:
+    """One virtual key, credentials included, as the live API returns them."""
+    return {
+        "id": key_id,
+        "keychain_id": keychain_id,
+        "created_at": "2026-08-07T12:00:00Z",
+        "updated_at": "2026-08-07T12:00:00Z",
+        "name": "Cleaner",
+        "email": None,
+        "sms_number": None,
+        "sent_at": None,
+        "first_used_at": None,
+        "last_used_at": None,
+        "usage_count": usage_count,
+        "pin_code": "906613",
+        "qr_code_url": "https://vk.butterflymx.com/qr/abc123",
+        "instructions_url": "https://vk.butterflymx.com/i/abc123",
+        "building_id": BUILDING_ID,
+    }
+
 
 def access_log_payload(
     entry_id: int = 2170896283,
@@ -175,17 +231,37 @@ def config_entry() -> MockConfigEntry:
     )
 
 
-@pytest.fixture
-def mock_topology(aioclient_mock):
-    """Mock the topology, and empty call and access logs."""
-    aioclient_mock.get(f"{API_URL}/v4/tenants", json=TENANTS_RESPONSE)
-    aioclient_mock.get(f"{API_URL}/v4/access_points", json=ACCESS_POINTS_RESPONSE)
-    aioclient_mock.get(f"{API_URL}/v4/devices", json=DEVICES_RESPONSE)
-    aioclient_mock.get(
-        f"{API_URL}/v4/buildings/{BUILDING_ID}/calls", json=EMPTY_CALLS_RESPONSE
-    )
-    aioclient_mock.get(
+def register_topology(
+    mock,
+    *,
+    keychains: list[dict[str, Any]] | None = None,
+    virtual_keys: list[dict[str, Any]] | None = None,
+):
+    """Mock everything setup reads, with no calls, releases or passes by default.
+
+    Takes the pass payloads as arguments rather than letting tests re-register
+    the endpoint afterwards: the mocker matches in registration order, so a
+    later registration for the same URL is silently ignored.
+    """
+    mock.get(f"{API_URL}/v4/tenants", json=TENANTS_RESPONSE)
+    mock.get(f"{API_URL}/v4/access_points", json=ACCESS_POINTS_RESPONSE)
+    mock.get(f"{API_URL}/v4/devices", json=DEVICES_RESPONSE)
+    mock.get(f"{API_URL}/v4/buildings/{BUILDING_ID}/calls", json=EMPTY_CALLS_RESPONSE)
+    mock.get(
         f"{API_URL}/v4/buildings/{BUILDING_ID}/access_logs",
         json=EMPTY_ACCESS_LOGS_RESPONSE,
     )
-    return aioclient_mock
+    mock.get(f"{API_URL}/v4/keychains", json=paged(keychains))
+    mock.get(f"{API_URL}/v4/virtual_keys", json=paged(virtual_keys))
+    return mock
+
+
+def paged(items: list[dict[str, Any]] | None) -> dict[str, Any]:
+    """Wrap payloads the way a list endpoint returns them."""
+    return {"data": list(items or []), "page_info": {"next_page": None}}
+
+
+@pytest.fixture
+def mock_topology(aioclient_mock):
+    """Mock the topology, and empty call and access logs."""
+    return register_topology(aioclient_mock)
