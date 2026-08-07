@@ -74,11 +74,30 @@ def request_body(mock, suffix: str) -> dict:
 
 
 def was_deleted(mock, suffix: str) -> bool:
-    """Report whether a DELETE was sent to a path."""
+    """Report whether a DELETE was sent to a path.
+
+    The recorded method is whatever the client passed, which is uppercase.
+    """
     return any(
-        call[0] == "delete" and str(call[1]).endswith(suffix)
+        call[0].lower() == "delete" and str(call[1]).endswith(suffix)
         for call in mock.mock_calls
     )
+
+
+async def call_service(hass: HomeAssistant, service: str, **data):
+    """Call a pass service against the passes sensor and unwrap the response.
+
+    Home Assistant keys an entity service's response by entity ID, the same
+    way weather.get_forecasts does, so there is always exactly one entry here.
+    """
+    response = await hass.services.async_call(
+        DOMAIN,
+        service,
+        {"entity_id": PASSES_ENTITY, **data},
+        blocking=True,
+        return_response=True,
+    )
+    return response[PASSES_ENTITY]
 
 
 # --- Parsing -----------------------------------------------------------------
@@ -227,13 +246,7 @@ async def test_creating_a_delivery_pass_returns_the_code(
         status=201,
     )
 
-    response = await hass.services.async_call(
-        DOMAIN,
-        SERVICE_CREATE_DELIVERY_PASS,
-        {"entity_id": PASSES_ENTITY, "name": "Amazon"},
-        blocking=True,
-        return_response=True,
-    )
+    response = await call_service(hass, SERVICE_CREATE_DELIVERY_PASS, name="Amazon")
 
     assert response["pass_id"] == KEYCHAIN_ID
     assert response["keys"][0]["pin_code"] == PIN
@@ -256,17 +269,12 @@ async def test_creating_a_visitor_pass_issues_its_own_code(
         f"{API_URL}/v4/virtual_keys", json={"data": virtual_key_payload()}, status=201
     )
 
-    response = await hass.services.async_call(
-        DOMAIN,
+    response = await call_service(
+        hass,
         SERVICE_CREATE_VISITOR_PASS,
-        {
-            "entity_id": PASSES_ENTITY,
-            "name": "Cleaner",
-            "starts_at": "2026-08-07T12:00:00+00:00",
-            "ends_at": "2026-08-07T16:00:00+00:00",
-        },
-        blocking=True,
-        return_response=True,
+        name="Cleaner",
+        starts_at="2026-08-07T12:00:00+00:00",
+        ends_at="2026-08-07T16:00:00+00:00",
     )
 
     assert response["keys"][0]["pin_code"] == PIN
@@ -404,13 +412,7 @@ async def test_listing_passes_returns_the_codes(
     """How a code is read back off a pass created days ago."""
     await setup_with_passes(hass, aioclient_mock, config_entry, keychain_payload())
 
-    response = await hass.services.async_call(
-        DOMAIN,
-        SERVICE_LIST_PASSES,
-        {"entity_id": PASSES_ENTITY},
-        blocking=True,
-        return_response=True,
-    )
+    response = await call_service(hass, SERVICE_LIST_PASSES)
 
     assert len(response["passes"]) == 1
     assert response["passes"][0]["keys"][0]["pin_code"] == PIN

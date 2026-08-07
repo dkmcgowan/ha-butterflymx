@@ -186,14 +186,20 @@ actions:
     data:
       name: "Amazon - Tuesday"
     response_variable: delivery
+  - variables:
+      pass: "{{ delivery['sensor.unit_4b_passes'] }}"
   - action: notify.mobile_app_my_phone
     data:
       title: "Delivery code"
-      message: "PIN {{ delivery.keys[0].pin_code }}"
+      message: "PIN {{ pass.keys[0].pin_code }}"
 ```
 
 The name is worth choosing well: it is what shows up in the ButterflyMX access
 log when the code gets used.
+
+The response is keyed by the entity you targeted, the same shape
+`weather.get_forecasts` returns. With one unit there is only ever the one key,
+which is why the example pulls it out into a variable first.
 
 ### Creating a visitor code
 
@@ -214,9 +220,9 @@ actions:
 Everything but `name` is optional. Leave the times out and it starts now and
 runs for four hours; leave `doors` out and it opens all of them.
 
-The response carries `pass_id`, the window, and a `keys` list with `pin_code`,
-`qr_code_url` and `instructions_url` — the last being a page you can send
-someone that explains how to use the code.
+Under `visitor['sensor.unit_4b_passes']` you get `pass_id`, the window, and a
+`keys` list with `pin_code`, `qr_code_url` and `instructions_url` — the last
+being a page you can send someone that explains how to use the code.
 
 ### Seeing and revoking passes
 
@@ -226,12 +232,16 @@ one and a `used` flag so you can tell whether a delivery code has been redeemed.
 
 ```yaml
 # Read the codes back, including the PINs.
+# all_passes['sensor.unit_4b_passes'].passes is the list.
 actions:
   - action: butterflymx.list_passes
     target:
       entity_id: sensor.unit_4b_passes
     response_variable: all_passes
 ```
+
+Run that one from **Developer tools → Actions** when you just want to look up a
+code: the response appears right there on the page.
 
 ```yaml
 # Revoke one. This deletes its codes too, and cannot be undone.
