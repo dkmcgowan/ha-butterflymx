@@ -13,7 +13,16 @@
     "sensor": {
       "last_call": {
         "default": "mdi:phone-incoming"
+      },
+      "active_passes": {
+        "default": "mdi:key-chain-variant"
       }
     }
+  },
+  "services": {
+    "create_delivery_pass": "mdi:package-variant-closed",
+    "create_visitor_pass": "mdi:account-key",
+    "list_passes": "mdi:format-list-bulleted",
+    "revoke_pass": "mdi:key-remove"
   }
 }

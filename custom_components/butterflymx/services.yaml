@@ -1,0 +1,64 @@
+# Targets are the unit's "Passes" sensor.  Home Assistant's target filters
+# cannot narrow a picker below a domain, so the other ButterflyMX sensors show
+# up in the list too; picking one of those is refused with an explanation
+# rather than half-working.
+
+create_delivery_pass:
+  target:
+    entity:
+      integration: butterflymx
+      domain: sensor
+  fields:
+    name:
+      required: true
+      example: Amazon Tuesday
+      selector:
+        text:
+
+create_visitor_pass:
+  target:
+    entity:
+      integration: butterflymx
+      domain: sensor
+  fields:
+    name:
+      required: true
+      example: Cleaner
+      selector:
+        text:
+    starts_at:
+      required: false
+      selector:
+        datetime:
+    ends_at:
+      required: false
+      selector:
+        datetime:
+    doors:
+      required: false
+      selector:
+        entity:
+          multiple: true
+          filter:
+            - integration: butterflymx
+              domain: lock
+
+list_passes:
+  target:
+    entity:
+      integration: butterflymx
+      domain: sensor
+
+revoke_pass:
+  target:
+    entity:
+      integration: butterflymx
+      domain: sensor
+  fields:
+    pass_id:
+      required: true
+      example: 44137821
+      selector:
+        number:
+          mode: box
+          min: 1

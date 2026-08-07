@@ -81,12 +81,75 @@
       },
       "last_door_release": {
         "name": "Last door opened"
+      },
+      "active_passes": {
+        "name": "Passes"
+      }
+    }
+  },
+  "services": {
+    "create_delivery_pass": {
+      "name": "Create delivery pass",
+      "description": "Creates a single-use code for a delivery, the same thing the ButterflyMX app calls a delivery code. It opens every door, starts now and lasts 30 days or until it is used, whichever comes first. Returns the PIN and QR link, which are not stored anywhere in Home Assistant.",
+      "fields": {
+        "name": {
+          "name": "Name",
+          "description": "What this pass is for. It is what the access log shows when the code is used, so make it something you will recognise later."
+        }
+      }
+    },
+    "create_visitor_pass": {
+      "name": "Create visitor pass",
+      "description": "Creates a reusable code valid over a window, the same thing the ButterflyMX app calls a visitor code. Returns the PIN and QR link, which are not stored anywhere in Home Assistant.",
+      "fields": {
+        "name": {
+          "name": "Name",
+          "description": "Who the pass is for. It is what the access log shows when the code is used."
+        },
+        "starts_at": {
+          "name": "Valid from",
+          "description": "When the code starts working. Defaults to now."
+        },
+        "ends_at": {
+          "name": "Valid until",
+          "description": "When the code stops working. Defaults to four hours after it starts."
+        },
+        "doors": {
+          "name": "Doors",
+          "description": "Which doors the code opens. Leave empty for all of them."
+        }
+      }
+    },
+    "list_passes": {
+      "name": "List passes",
+      "description": "Returns every pass on this unit, PINs and QR links included. This is how to read a code back off a pass you created earlier: the codes are deliberately kept out of the sensor, so they have to be asked for."
+    },
+    "revoke_pass": {
+      "name": "Revoke pass",
+      "description": "Deletes a pass and every code it issued. This cannot be undone.",
+      "fields": {
+        "pass_id": {
+          "name": "Pass ID",
+          "description": "The ID of the pass to delete, as shown in the Passes sensor's attributes or returned when it was created."
+        }
       }
     }
   },
   "exceptions": {
     "door_release_failed": {
       "message": "Could not open {door}: {error}"
+    },
+    "not_a_passes_sensor": {
+      "message": "{entity} is not a ButterflyMX passes sensor. Target the unit's Passes sensor instead."
+    },
+    "unknown_pass": {
+      "message": "{entity} has no pass with ID {pass_id}. It may have been revoked already, or it may belong to another unit."
+    },
+    "pass_window_backwards": {
+      "message": "A visitor pass cannot end before it starts (from {starts_at} until {ends_at})."
+    },
+    "not_a_butterflymx_door": {
+      "message": "{entity} is not a ButterflyMX door."
     }
   }
 }
