@@ -413,22 +413,16 @@ Sandbox credentials are requested separately from production ones. Test against
 sandbox first: door releases are real, and a mistake pointed at production opens
 an actual door.
 
-### Deploying to a test instance
+### Trying a change on a real instance
 
-`scripts/deploy.sh` copies the integration over SSH and restarts Home Assistant
-Core. It needs the **Advanced SSH & Web Terminal** add-on with key
-authentication, and uses only `ssh` and `tar`, so it works from Git Bash on
-Windows.
+Install it the way everyone else does: add your fork or branch to HACS as a
+custom repository, per [Through HACS](#through-hacs) above. That exercises the
+packaging as well as the code — `hacs.json`, the manifest version, the brand
+images — which copying files over SSH quietly skips.
 
-```bash
-echo 'HAOS_HOST=homeassistant.local' > scripts/.env.deploy
-scripts/deploy.sh              # copy and restart
-scripts/deploy.sh --logs       # copy, restart, then follow the log
-scripts/deploy.sh --no-restart # copy only
-```
-
-A restart is needed for Python changes, because reloading a config entry re-runs
-setup without re-importing changed modules.
+Bump `version` in `manifest.json` before you push, or HACS will not offer the
+update. A full Home Assistant restart is needed for Python changes; reloading
+the config entry re-runs setup without re-importing changed modules.
 
 ### How it talks to ButterflyMX
 
