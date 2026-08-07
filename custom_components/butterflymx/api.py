@@ -42,7 +42,15 @@ from .exceptions import (
     ButterflyMXRateLimitError,
     ButterflyMXResponseError,
 )
-from .models import AccessLogEntry, AccessPoint, Call, Device, Tenant
+from .models import (
+    AccessLogEntry,
+    AccessPoint,
+    Call,
+    Device,
+    Keychain,
+    Tenant,
+    VirtualKey,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -381,6 +389,109 @@ class ButterflyMXClient:
             if isinstance(data, dict):
                 return data
         return {}
+
+    # -- Passes ---------------------------------------------------------------
+
+    async def async_get_keychains(self) -> list[Keychain]:
+        """List every pass on the account."""
+        raw = await self._async_get_paginated("/keychains")
+        keychains = [Keychain.from_api(item) for item in raw]
+        return [keychain for keychain in keychains if keychain is not None]
+
+    async def async_get_virtual_keys(
+        self, keychain_id: int | None = None
+    ) -> list[VirtualKey]:
+        """List the credentials issued by one keychain, or by all of them."""
+        params = (
+            {"q[keychain_id_eq]": str(keychain_id)} if keychain_id is not None else None
+        )
+        raw = await self._async_get_paginated("/virtual_keys", params)
+        keys = [VirtualKey.from_api(item) for item in raw]
+        return [key for key in keys if key is not None]
+
+    async def async_create_delivery_pass(self, tenant_id: int, name: str) -> Keychain:
+        """Create a single-use delivery pass.
+
+        The server fills in everything else: it starts now, runs for 30 days,
+        opens every door on the account, and issues its own virtual key.  There
+        is nothing else to send, which is why this takes no window and no doors.
+        """
+        return await self._async_create_keychain(
+            "delivery_pass", {"name": name, "tenant_id": tenant_id}
+        )
+
+    async def async_create_visitor_pass(
+        self,
+        tenant_id: int,
+        name: str,
+        starts_at: datetime,
+        ends_at: datetime,
+        access_point_ids: list[int] | None = None,
+        device_ids: list[int] | None = None,
+    ) -> Keychain:
+        """Create a reusable pass valid over a window.
+
+        Leaving the doors empty grants all of them, which is what ButterflyMX
+        does for a delivery pass too.
+
+        ``recipients`` is deliberately not accepted.  Passing it makes
+        ButterflyMX email or text the addresses given, so a service that took it
+        could send a working door code to a stranger on a typo.  The codes come
+        back in the response instead, to be handed out however the caller likes.
+        """
+        body: dict[str, Any] = {
+            "name": name,
+            "tenant_id": tenant_id,
+            "starts_at": starts_at.isoformat(),
+            "ends_at": ends_at.isoformat(),
+        }
+        if access_point_ids:
+            body["access_point_ids"] = access_point_ids
+        if device_ids:
+            body["device_ids"] = device_ids
+        return await self._async_create_keychain("custom", body)
+
+    async def _async_create_keychain(
+        self, kind: str, attributes: dict[str, Any]
+    ) -> Keychain:
+        """POST one of the keychain sub-resources and parse what comes back."""
+        payload = await self._async_request(
+            "POST", f"/keychains/{kind}", json={"keychain": attributes}, retry=False
+        )
+        data = payload.get("data") if isinstance(payload, dict) else None
+        keychain = Keychain.from_api(data) if isinstance(data, dict) else None
+        if keychain is None:
+            raise ButterflyMXResponseError(
+                f"ButterflyMX accepted the {kind} pass but did not describe it"
+            )
+        return keychain
+
+    async def async_create_virtual_key(
+        self, keychain_id: int, name: str | None = None
+    ) -> VirtualKey:
+        """Issue a credential on an existing keychain.
+
+        A custom keychain arrives with ``virtual_key_ids: []`` -- it is the
+        grant, not the code -- so a visitor pass is only usable once this has
+        run.  A delivery pass issues its own and does not need this.
+        """
+        attributes: dict[str, Any] = {"keychain_id": keychain_id}
+        if name:
+            attributes["name"] = name
+        payload = await self._async_request(
+            "POST", "/virtual_keys", json={"virtual_key": attributes}, retry=False
+        )
+        data = payload.get("data") if isinstance(payload, dict) else None
+        key = VirtualKey.from_api(data) if isinstance(data, dict) else None
+        if key is None:
+            raise ButterflyMXResponseError(
+                "ButterflyMX created the code but did not return it"
+            )
+        return key
+
+    async def async_delete_keychain(self, keychain_id: int) -> None:
+        """Revoke a pass, and with it every code it issued."""
+        await self._async_request("DELETE", f"/keychains/{keychain_id}", retry=False)
 
     # -- Images ---------------------------------------------------------------
 

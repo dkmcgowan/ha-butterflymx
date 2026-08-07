@@ -106,6 +106,12 @@ ACCESS_LOG_SCAN_INTERVAL: Final = 60  # seconds
 # How far back to look for door releases on the first poll after startup.
 ACCESS_LOG_LOOKBACK: Final = 300  # seconds
 
+# Visitor and delivery passes only change when someone changes them, and every
+# service that does asks for a refresh immediately.  This interval exists to
+# notice passes created or deleted in the ButterflyMX app, which does not need
+# to be quick.
+PASS_SCAN_INTERVAL: Final = 900  # seconds
+
 # When ButterflyMX is pushing calls to us, polling stops being the way calls are
 # noticed and becomes a safety net, so it slows right down.  It cannot be turned
 # off: deliveries are not guaranteed, nothing arrives while Home Assistant is
@@ -156,3 +162,21 @@ EVENT_TYPE_DOOR_RELEASE: Final = "door_release"
 
 WEBHOOK_RESOURCE_CALL: Final = "call"
 WEBHOOK_RESOURCE_DOOR_RELEASE: Final = "door_release"
+
+# --- Services -----------------------------------------------------------------
+
+# Named after what the ButterflyMX app calls them, so the two agree.  A delivery
+# pass is single use; a visitor pass is reusable inside its window.
+SERVICE_CREATE_DELIVERY_PASS: Final = "create_delivery_pass"
+SERVICE_CREATE_VISITOR_PASS: Final = "create_visitor_pass"
+SERVICE_LIST_PASSES: Final = "list_passes"
+SERVICE_REVOKE_PASS: Final = "revoke_pass"
+
+ATTR_PASS_ID: Final = "pass_id"
+ATTR_DOORS: Final = "doors"
+ATTR_STARTS_AT: Final = "starts_at"
+ATTR_ENDS_AT: Final = "ends_at"
+ATTR_PASSES: Final = "passes"
+
+# A visitor pass with no end given runs for this long.
+DEFAULT_VISITOR_PASS_HOURS: Final = 4
