@@ -17,25 +17,43 @@ from .coordinator import (
 from .models import AccessLogEntry, Call, Pass, Tenant
 
 
-def building_device_info(building_id: int, building_name: str | None) -> DeviceInfo:
-    """Device entry representing a ButterflyMX building."""
+def building_identifier(tenant_id: int, building_id: int) -> str:
+    """Registry identifier for a building, as seen by one tenancy.
+
+    Every identifier this integration creates starts with the tenancy, because
+    a config entry is one ButterflyMX login and Home Assistant gives each entry
+    its own devices -- ``DeviceEntry.config_entry_id`` is a single entry, and
+    removing an entry removes its devices outright.  Two residents of the same
+    building who each set the integration up therefore need two sets, not one
+    set fought over by both.
+    """
+    return f"tenant_{tenant_id}_building_{building_id}"
+
+
+def building_device_info(tenant: Tenant) -> DeviceInfo:
+    """Device entry representing a ButterflyMX building.
+
+    Registered explicitly during setup rather than implicitly by an entity,
+    because nothing else has a reason to live on it and the doors and the unit
+    both point at it as their parent.
+    """
     return DeviceInfo(
-        identifiers={(DOMAIN, f"building_{building_id}")},
+        identifiers={(DOMAIN, building_identifier(tenant.id, tenant.building_id))},
         manufacturer=MANUFACTURER,
-        name=building_name or f"Building {building_id}",
+        name=tenant.building_name or f"Building {tenant.building_id}",
         model="Building",
     )
 
 
-def door_device_info(target: LockTarget, building_name: str | None) -> DeviceInfo:
-    """Device entry representing a single door."""
+def door_device_info(target: LockTarget) -> DeviceInfo:
+    """Device entry representing a single door, as one tenancy."""
     return DeviceInfo(
         identifiers={(DOMAIN, target.device_identifier)},
         manufacturer=MANUFACTURER,
         name=target.name,
         model=target.model or "Access point",
         serial_number=target.serial_number,
-        via_device=(DOMAIN, f"building_{target.building_id}"),
+        via_device=(DOMAIN, building_identifier(target.tenant_id, target.building_id)),
     )
 
 
@@ -48,7 +66,7 @@ def unit_device_info(tenant: Tenant) -> DeviceInfo:
         manufacturer=MANUFACTURER,
         name=name,
         model="Intercom",
-        via_device=(DOMAIN, f"building_{tenant.building_id}"),
+        via_device=(DOMAIN, building_identifier(tenant.id, tenant.building_id)),
     )
 
 

@@ -9,7 +9,8 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import ButterflyMXClient
@@ -33,6 +34,7 @@ from .coordinator import (
     ButterflyMXPassCoordinator,
     ButterflyMXTopologyCoordinator,
 )
+from .entity import building_device_info
 from .webhook import ButterflyMXWebhookManager
 
 _LOGGER = logging.getLogger(__name__)
@@ -121,6 +123,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ButterflyMXConfigEntry) 
         options_snapshot=dict(entry.options),
     )
 
+    _async_register_buildings(hass, entry, topology)
+
     if entry.options.get(CONF_ENABLE_WEBHOOK, False):
         manager = ButterflyMXWebhookManager(hass, entry)
         # Assigned before setup runs so a half-finished registration is still
@@ -160,6 +164,31 @@ async def async_setup_entry(hass: HomeAssistant, entry: ButterflyMXConfigEntry) 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
     return True
+
+
+@callback
+def _async_register_buildings(
+    hass: HomeAssistant,
+    entry: ButterflyMXConfigEntry,
+    topology: ButterflyMXTopologyCoordinator,
+) -> None:
+    """Create the building devices the doors and units hang off.
+
+    Registered here rather than by an entity, because a building has no entity
+    of its own: it exists to group the doors and the intercom under a name.
+    Doing it before the platforms load also means the ``via_device`` links they
+    declare resolve, instead of Home Assistant reporting a parent that does not
+    exist.
+
+    One per tenancy, not one per building.  A tenancy is the thing that gets a
+    building device pointed at it, and an account with two tenancies in one
+    building would otherwise leave the second one's unit orphaned.
+    """
+    registry = dr.async_get(hass)
+    for tenant in (topology.data.tenants if topology.data else []):
+        registry.async_get_or_create(
+            config_entry_id=entry.entry_id, **building_device_info(tenant)
+        )
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ButterflyMXConfigEntry) -> bool:

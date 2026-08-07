@@ -14,6 +14,7 @@ from homeassistant.components.lock import (
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import ATTR_ENTITY_ID
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.butterflymx.const import (
@@ -21,6 +22,7 @@ from custom_components.butterflymx.const import (
     CONF_RELOCK_DELAY,
     CONF_TOKEN,
     DEFAULT_CALL_SCAN_INTERVAL,
+    DOMAIN,
     EVENT_CALL,
     WEBHOOK_FALLBACK_SCAN_INTERVAL,
 )
@@ -71,6 +73,53 @@ async def test_setup_creates_entities(
     assert lock.state == LockState.LOCKED
     assert lock.attributes["assumed_state"] is True
     assert lock.attributes["access_point_id"] == 1001
+
+
+async def test_doors_and_the_unit_hang_off_the_building(
+    hass: HomeAssistant, mock_topology, config_entry: MockConfigEntry
+) -> None:
+    """The building device has to exist, or the parent links point at nothing.
+
+    Nothing lives on a building, so no entity creates it and setup has to. A
+    ``via_device`` naming a device that was never registered is reported by
+    Home Assistant as an error, and the grouping silently does not happen.
+    """
+    await _setup(hass, config_entry)
+    registry = dr.async_get(hass)
+
+    building = registry.async_get_device(
+        identifiers={(DOMAIN, f"tenant_{TENANT_ID}_building_{BUILDING_ID}")}
+    )
+    assert building is not None
+    assert building.name == "Crimson"
+
+    for identifier in (
+        f"tenant_{TENANT_ID}_access_point_1001",
+        f"tenant_{TENANT_ID}",
+    ):
+        device = registry.async_get_device(identifiers={(DOMAIN, identifier)})
+        assert device is not None, identifier
+        assert device.via_device_id == building.id, identifier
+
+
+async def test_identifiers_carry_the_tenancy(
+    hass: HomeAssistant, mock_topology, config_entry: MockConfigEntry
+) -> None:
+    """A second ButterflyMX login in the same building must not collide.
+
+    Home Assistant gives each config entry its own devices, so nothing here may
+    be identified by the door alone.
+    """
+    await _setup(hass, config_entry)
+    registry = dr.async_get(hass)
+
+    assert registry.async_get_device(identifiers={(DOMAIN, "access_point_1001")}) is None
+    assert registry.async_get_device(identifiers={(DOMAIN, "building_777")}) is None
+
+    entity_registry = er.async_get(hass)
+    lock = entity_registry.async_get(LOCK_ENTITY)
+    assert lock is not None
+    assert lock.unique_id == f"{DOMAIN}_tenant_{TENANT_ID}_access_point_1001"
 
 
 async def test_unlock_releases_the_door(

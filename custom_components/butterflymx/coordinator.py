@@ -71,7 +71,16 @@ _FAR_FUTURE = datetime.max.replace(tzinfo=UTC)
 
 @dataclass(frozen=True, slots=True)
 class LockTarget:
-    """A door this integration can open."""
+    """A door this integration can open, as one tenancy.
+
+    Note the "as one tenancy" part.  A door is shared, but opening it is not: a
+    release is performed as a particular tenant and the access log records who.
+    So a household where two residents each have their own ButterflyMX login
+    and set the integration up twice has two genuinely different locks on one
+    physical door, and each one's releases are attributed to its own resident.
+    That is why the tenant is part of the identity here rather than an
+    incidental field.
+    """
 
     unique_key: str
     name: str
@@ -115,7 +124,7 @@ def build_lock_targets(topology: ButterflyMXTopology) -> list[LockTarget]:
         claimed_device_ids.update(access_point.device_ids)
         targets.append(
             LockTarget(
-                unique_key=f"access_point_{access_point.id}",
+                unique_key=f"tenant_{tenant.id}_access_point_{access_point.id}",
                 name=access_point.name,
                 tenant_id=tenant.id,
                 building_id=access_point.building_id,
@@ -133,7 +142,7 @@ def build_lock_targets(topology: ButterflyMXTopology) -> list[LockTarget]:
             continue
         targets.append(
             LockTarget(
-                unique_key=f"device_{device.id}",
+                unique_key=f"tenant_{tenant.id}_device_{device.id}",
                 name=device.name,
                 tenant_id=tenant.id,
                 building_id=device.building_id,

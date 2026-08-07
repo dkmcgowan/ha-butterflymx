@@ -55,21 +55,14 @@ async def async_setup_entry(
             if target.unique_key in created:
                 continue
             created.add(target.unique_key)
-            building_name = _building_name(topology, target.building_id)
             new_entities.append(
-                ButterflyMXLock(coordinator, target, building_name, runtime.relock_delay)
+                ButterflyMXLock(coordinator, target, runtime.relock_delay)
             )
         if new_entities:
             async_add_entities(new_entities)
 
     _async_add_new_locks()
     entry.async_on_unload(coordinator.async_add_listener(_async_add_new_locks))
-
-
-def _building_name(topology: ButterflyMXTopology, building_id: int) -> str | None:
-    """Look up a building's name from any tenant record."""
-    tenant = topology.tenant_for_building(building_id)
-    return tenant.building_name if tenant else None
 
 
 class ButterflyMXLock(ButterflyMXTopologyEntity, LockEntity):
@@ -83,7 +76,6 @@ class ButterflyMXLock(ButterflyMXTopologyEntity, LockEntity):
         self,
         coordinator: ButterflyMXTopologyCoordinator,
         target: LockTarget,
-        building_name: str | None,
         relock_delay: int,
     ) -> None:
         """Initialize the lock."""
@@ -91,7 +83,7 @@ class ButterflyMXLock(ButterflyMXTopologyEntity, LockEntity):
         self._target = target
         self._relock_delay = relock_delay
         self._attr_unique_id = f"{DOMAIN}_{target.unique_key}"
-        self._attr_device_info = door_device_info(target, building_name)
+        self._attr_device_info = door_device_info(target)
         self._attr_is_locked = True
         self._attr_is_unlocking = False
         self._relock_task: asyncio.Task[None] | None = None

@@ -51,7 +51,7 @@ def test_access_points_become_locks() -> None:
     targets = build_lock_targets(topology)
 
     assert len(targets) == 1
-    assert targets[0].unique_key == "access_point_100"
+    assert targets[0].unique_key == "tenant_1_access_point_100"
     assert targets[0].access_point_id == 100
     assert targets[0].device_id is None
     assert targets[0].tenant_id == 1
@@ -69,7 +69,7 @@ def test_locks_not_behind_an_access_point_are_addressed_by_device() -> None:
     targets = build_lock_targets(topology)
 
     assert len(targets) == 1
-    assert targets[0].unique_key == "device_501"
+    assert targets[0].unique_key == "tenant_1_device_501"
     assert targets[0].device_id == 501
     assert targets[0].access_point_id is None
 
@@ -95,7 +95,34 @@ def test_devices_behind_an_access_point_are_not_duplicated() -> None:
     )
     targets = build_lock_targets(topology)
 
-    assert [target.unique_key for target in targets] == ["access_point_100"]
+    assert [target.unique_key for target in targets] == ["tenant_1_access_point_100"]
+
+
+def test_two_residents_of_one_building_get_their_own_locks() -> None:
+    """The same door, set up twice, must not produce the same identity.
+
+    Two people in a house who each have a ButterflyMX login set the integration
+    up twice, and Home Assistant gives each config entry its own entities and
+    devices. If the identity were the door alone, the second setup's locks
+    would collide and be dropped.
+
+    It is not only a registry problem. A release is performed as a tenant and
+    the access log records who, so these really are two different locks that
+    happen to open one door.
+    """
+    door = _access_point(100, 7, [])
+    mine = build_lock_targets(
+        ButterflyMXTopology(tenants=[_tenant(tenant_id=1)], access_points=[door])
+    )
+    theirs = build_lock_targets(
+        ButterflyMXTopology(tenants=[_tenant(tenant_id=2)], access_points=[door])
+    )
+
+    assert mine[0].unique_key != theirs[0].unique_key
+    assert mine[0].device_identifier != theirs[0].device_identifier
+    # Same door, opened as different people.
+    assert mine[0].access_point_id == theirs[0].access_point_id == 100
+    assert (mine[0].tenant_id, theirs[0].tenant_id) == (1, 2)
 
 
 def test_doors_without_a_tenant_are_skipped() -> None:
