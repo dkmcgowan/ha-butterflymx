@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 import logging
 from typing import TYPE_CHECKING
 
@@ -36,6 +36,7 @@ from .const import (
     DOMAIN,
     EVENT_CALL,
     EVENT_DOOR_RELEASE,
+    PASS_SCAN_INTERVAL,
     TOPOLOGY_SCAN_INTERVAL,
 )
 from .exceptions import (
@@ -49,7 +50,9 @@ from .models import (
     ButterflyMXTopology,
     Call,
     Device,
+    Pass,
     Tenant,
+    VirtualKey,
     distinct_building_ids,
 )
 
@@ -61,6 +64,9 @@ _LOGGER = logging.getLogger(__name__)
 # Remember this many call IDs per building so a webhook and a poll delivering
 # the same call do not fire the doorbell twice.
 _SEEN_CALL_LIMIT = 200
+
+# Sorts a pass with no end date last, rather than crashing on a None comparison.
+_FAR_FUTURE = datetime.max.replace(tzinfo=UTC)
 
 
 @dataclass(frozen=True, slots=True)
@@ -531,3 +537,84 @@ class ButterflyMXAccessLogCoordinator(DataUpdateCoordinator[dict[int, AccessLogE
                 if tenant.id == entry.tenant_id:
                     return tenant
         return topology.tenant_for_unit(entry.unit_id)
+
+
+class ButterflyMXPassCoordinator(DataUpdateCoordinator[dict[int, Pass]]):
+    """Keeps track of the visitor and delivery passes on the account.
+
+    ``data`` maps a keychain ID to the pass it describes.
+
+    Polled slowly on purpose.  Passes do not appear on their own: something has
+    to create one, and the only two things that can are this integration and the
+    ButterflyMX app.  Both are covered without a fast loop, because every
+    service that changes a pass asks for a refresh straight afterwards, so the
+    interval is really only there to notice edits made in the app.  Usage counts
+    lag by up to that interval, which is fine: a door actually being opened
+    already arrives on the access log's own loop.
+
+    Two requests per poll, and the second one is the sensitive one -- listing
+    virtual keys returns live PINs and QR links.  Nothing here writes them
+    anywhere; see :class:`~custom_components.butterflymx.models.VirtualKey`.
+    """
+
+    config_entry: ButterflyMXConfigEntry
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        entry: ConfigEntry,
+        client: ButterflyMXClient,
+    ) -> None:
+        """Initialize the pass coordinator."""
+        super().__init__(
+            hass,
+            _LOGGER,
+            config_entry=entry,
+            name=f"{DOMAIN} passes",
+            update_interval=timedelta(seconds=PASS_SCAN_INTERVAL),
+        )
+        self.client = client
+
+    async def _async_update_data(self) -> dict[int, Pass]:
+        """List every pass and attach the codes each one has issued."""
+        try:
+            keychains = await self.client.async_get_keychains()
+            # One unfiltered request rather than one per keychain: the accounts
+            # this runs on have a handful of passes, and asking per keychain
+            # would turn a quiet loop into N+1 requests.
+            keys = await self.client.async_get_virtual_keys() if keychains else []
+        except ButterflyMXAuthError as err:
+            raise ConfigEntryAuthFailed(str(err)) from err
+        except ButterflyMXConnectionError as err:
+            raise UpdateFailed(f"Could not reach ButterflyMX: {err}") from err
+        except ButterflyMXError as err:
+            raise UpdateFailed(str(err)) from err
+
+        by_keychain: dict[int, list[VirtualKey]] = {}
+        for key in keys:
+            if key.keychain_id is not None:
+                by_keychain.setdefault(key.keychain_id, []).append(key)
+
+        return {
+            keychain.id: Pass(
+                keychain=keychain, keys=tuple(by_keychain.get(keychain.id, ()))
+            )
+            for keychain in keychains
+        }
+
+    def passes_for_tenant(self, tenant: Tenant) -> list[Pass]:
+        """Return this tenancy's passes, soonest to expire first.
+
+        A keychain carries both a tenant and a unit, and the app can create one
+        against either, so both are checked before deciding a pass is somebody
+        else's.
+        """
+        unit_id = tenant.unit.id if tenant.unit else None
+        matches = [
+            record
+            for record in (self.data or {}).values()
+            if record.keychain.tenant_id == tenant.id
+            or (unit_id is not None and record.keychain.unit_id == unit_id)
+        ]
+        matches.sort(key=lambda record: (record.keychain.ends_at or _FAR_FUTURE))
+        return matches

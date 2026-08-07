@@ -30,6 +30,7 @@ from .const import (
 from .coordinator import (
     ButterflyMXAccessLogCoordinator,
     ButterflyMXCallCoordinator,
+    ButterflyMXPassCoordinator,
     ButterflyMXTopologyCoordinator,
 )
 from .webhook import ButterflyMXWebhookManager
@@ -52,6 +53,7 @@ class ButterflyMXRuntimeData:
     topology: ButterflyMXTopologyCoordinator
     calls: ButterflyMXCallCoordinator
     access_log: ButterflyMXAccessLogCoordinator
+    passes: ButterflyMXPassCoordinator
     relock_delay: int
     options_snapshot: dict[str, Any] = field(default_factory=dict)
     webhook: ButterflyMXWebhookManager | None = None
@@ -102,11 +104,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ButterflyMXConfigEntry) 
     # door opened before Home Assistant started is not announced now.
     await access_log.async_config_entry_first_refresh()
 
+    passes = ButterflyMXPassCoordinator(hass, entry, client)
+    # Refreshed rather than first-refreshed: a failure here must not stop setup.
+    # Visitor passes are a convenience, and losing them is no reason to lose the
+    # doorbell and the doors as well.  The sensor reports itself unavailable and
+    # the next poll picks it up.
+    await passes.async_refresh()
+
     entry.runtime_data = ButterflyMXRuntimeData(
         client=client,
         topology=topology,
         calls=calls,
         access_log=access_log,
+        passes=passes,
         relock_delay=entry.options.get(CONF_RELOCK_DELAY, DEFAULT_RELOCK_DELAY),
         options_snapshot=dict(entry.options),
     )
