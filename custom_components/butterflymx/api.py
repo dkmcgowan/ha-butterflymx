@@ -42,7 +42,7 @@ from .exceptions import (
     ButterflyMXRateLimitError,
     ButterflyMXResponseError,
 )
-from .models import AccessPoint, Call, Device, Tenant
+from .models import AccessLogEntry, AccessPoint, Call, Device, Tenant
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -325,6 +325,30 @@ class ButterflyMXClient:
             Call.from_api(item, building_id) for item in data if isinstance(item, dict)
         ]
         return [call for call in calls if call is not None]
+
+    async def async_get_access_logs(
+        self, building_id: int, since: datetime | None = None, limit: int = 20
+    ) -> list[AccessLogEntry]:
+        """List recent door releases for a building, newest first.
+
+        Scoped to the signed-in resident: on a live account every entry carried
+        their own tenant and unit, so this does not report the neighbours.
+        """
+        params: dict[str, Any] = {"page": 1, "per": min(limit, PAGE_SIZE)}
+        if since is not None:
+            params["q[logged_at_gteq]"] = _as_api_timestamp(since)
+        payload = await self._async_request(
+            "GET", f"/buildings/{building_id}/access_logs", params=params
+        )
+        if not isinstance(payload, dict):
+            return []
+        data = payload.get("data")
+        if not isinstance(data, list):
+            return []
+        entries = [
+            AccessLogEntry.from_api(item) for item in data if isinstance(item, dict)
+        ]
+        return [entry for entry in entries if entry is not None]
 
     # -- Actions --------------------------------------------------------------
 

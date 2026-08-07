@@ -21,9 +21,13 @@ that is a deliberate decision made after seeing real ones:
 * It carries the resident's name, email and SIP username, none of which this
   integration wants to touch.
 
-So the delivery only says "go and look", and the call log stays the single
-source of truth.  A real delivery arrives in the same second the call is logged,
-so the record is already there to be found.
+So the delivery only says "go and look", and the logs stay the single source of
+truth.  A real delivery arrives in the same second the call is logged, so the
+record is already there to be found.
+
+Both call and door_release deliveries are subscribed to.  Both are handled the
+same way, since the body is not read: refresh the call log and the access log,
+and let those say what actually happened.
 """
 
 from __future__ import annotations
@@ -41,6 +45,7 @@ from .const import (
     CONF_WEBHOOK_INTEGRATION_IDS,
     DOMAIN,
     WEBHOOK_RESOURCE_CALL,
+    WEBHOOK_RESOURCE_DOOR_RELEASE,
 )
 from .exceptions import ButterflyMXError
 
@@ -100,7 +105,9 @@ class ButterflyMXWebhookManager:
                 continue
             try:
                 created = await client.async_create_tenant_integration(
-                    tenant.id, target_url, [WEBHOOK_RESOURCE_CALL]
+                    tenant.id,
+                    target_url,
+                    [WEBHOOK_RESOURCE_CALL, WEBHOOK_RESOURCE_DOOR_RELEASE],
                 )
             except ButterflyMXError as err:
                 _LOGGER.warning(
@@ -169,7 +176,13 @@ class ButterflyMXWebhookManager:
         if runtime is None:
             return Response(status=200)
 
+        # Both logs are read, because the body is not inspected and so nothing
+        # here says which kind of thing happened.  Two cheap reads on an event
+        # that happens a few times a day is a better trade than parsing a
+        # payload whose shape is not dependable.
+        #
         # Debounced and immediate: the first delivery refreshes at once, and a
         # burst collapses into one read rather than one read each.
         await runtime.calls.async_request_refresh()
+        await runtime.access_log.async_request_refresh()
         return Response(status=200)

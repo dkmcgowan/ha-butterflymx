@@ -58,6 +58,16 @@
             }
           }
         }
+      },
+      "door_release": {
+        "name": "Door opened",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "door_release": "Door opened"
+            }
+          }
+        }
       }
     },
     "image": {
@@ -68,6 +78,9 @@
     "sensor": {
       "last_call": {
         "name": "Last call"
+      },
+      "last_door_release": {
+        "name": "Last door opened"
       }
     }
   },

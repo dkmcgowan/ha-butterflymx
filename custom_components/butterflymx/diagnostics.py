@@ -78,5 +78,12 @@ async def async_get_config_entry_diagnostics(
         },
         TO_REDACT,
     )
+    result["access_log"] = async_redact_data(
+        {
+            str(tenant_id): asdict(entry)
+            for tenant_id, entry in (runtime.access_log.data or {}).items()
+        },
+        TO_REDACT,
+    )
     result["webhook_enabled"] = runtime.webhook is not None
     return result

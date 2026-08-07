@@ -98,6 +98,14 @@ MAX_CALL_SCAN_INTERVAL: Final = 300
 # Buildings/access points/devices change rarely.
 TOPOLOGY_SCAN_INTERVAL: Final = 3600  # seconds
 
+# Door releases are history rather than something to react to in the moment: a
+# visitor at the door is the call, and that has its own fast loop.  Polled at a
+# slower rate so adding it does not double the request count.
+ACCESS_LOG_SCAN_INTERVAL: Final = 60  # seconds
+
+# How far back to look for door releases on the first poll after startup.
+ACCESS_LOG_LOOKBACK: Final = 300  # seconds
+
 # When ButterflyMX is pushing calls to us, polling stops being the way calls are
 # noticed and becomes a safety net, so it slows right down.  It cannot be turned
 # off: deliveries are not guaranteed, nothing arrives while Home Assistant is
@@ -142,6 +150,9 @@ DIRECT_LOCK_DEVICE_TYPES: Final[frozenset[str]] = frozenset(
 
 EVENT_CALL: Final = "butterflymx_call"
 EVENT_TYPE_CALL: Final = "call"
+
+EVENT_DOOR_RELEASE: Final = "butterflymx_door_release"
+EVENT_TYPE_DOOR_RELEASE: Final = "door_release"
 
 WEBHOOK_RESOURCE_CALL: Final = "call"
 WEBHOOK_RESOURCE_DOOR_RELEASE: Final = "door_release"

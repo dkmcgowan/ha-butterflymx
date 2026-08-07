@@ -27,7 +27,11 @@ from .const import (
     DEFAULT_RELOCK_DELAY,
     WEBHOOK_FALLBACK_SCAN_INTERVAL,
 )
-from .coordinator import ButterflyMXCallCoordinator, ButterflyMXTopologyCoordinator
+from .coordinator import (
+    ButterflyMXAccessLogCoordinator,
+    ButterflyMXCallCoordinator,
+    ButterflyMXTopologyCoordinator,
+)
 from .webhook import ButterflyMXWebhookManager
 
 _LOGGER = logging.getLogger(__name__)
@@ -47,6 +51,7 @@ class ButterflyMXRuntimeData:
     client: ButterflyMXClient
     topology: ButterflyMXTopologyCoordinator
     calls: ButterflyMXCallCoordinator
+    access_log: ButterflyMXAccessLogCoordinator
     relock_delay: int
     options_snapshot: dict[str, Any] = field(default_factory=dict)
     webhook: ButterflyMXWebhookManager | None = None
@@ -92,10 +97,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ButterflyMXConfigEntry) 
     # a doorbell that rings and does nothing.  Keep this ordering.
     await calls.async_config_entry_first_refresh()
 
+    access_log = ButterflyMXAccessLogCoordinator(hass, entry, client, topology)
+    # Primed the same way as calls: mark what already happened as seen so a
+    # door opened before Home Assistant started is not announced now.
+    await access_log.async_config_entry_first_refresh()
+
     entry.runtime_data = ButterflyMXRuntimeData(
         client=client,
         topology=topology,
         calls=calls,
+        access_log=access_log,
         relock_delay=entry.options.get(CONF_RELOCK_DELAY, DEFAULT_RELOCK_DELAY),
         options_snapshot=dict(entry.options),
     )
@@ -125,10 +136,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ButterflyMXConfigEntry) 
             #
             # Nothing is scheduled yet: the coordinator arms its timer when the
             # first entity subscribes, in async_forward_entry_setups below.
-            calls.update_interval = timedelta(seconds=WEBHOOK_FALLBACK_SCAN_INTERVAL)
+            fallback = timedelta(seconds=WEBHOOK_FALLBACK_SCAN_INTERVAL)
+            calls.update_interval = fallback
+            # Door releases are pushed too, so the access log gets the same
+            # treatment, unless it was already polling more slowly than this.
+            access_log.update_interval = max(access_log.update_interval, fallback)
             _LOGGER.debug(
-                "Webhook push registered; call polling slowed to %ss and kept "
-                "as a safety net",
+                "Webhook push registered; polling slowed to %ss and kept as a "
+                "safety net",
                 WEBHOOK_FALLBACK_SCAN_INTERVAL,
             )
 

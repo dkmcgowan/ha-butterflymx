@@ -107,6 +107,46 @@ EMPTY_CALLS_RESPONSE: dict[str, Any] = {
     "page_info": {"current_page": 1, "total_pages": 1, "next_page": None},
 }
 
+EMPTY_ACCESS_LOGS_RESPONSE: dict[str, Any] = {
+    "data": [],
+    "page_info": {"current_page": 1, "total_pages": 1, "next_page": None},
+}
+
+
+def access_log_payload(
+    entry_id: int = 2170896283,
+    logged_at: str = "2026-08-04T12:00:00Z",
+    entry_method: Any = "App call",
+) -> dict[str, Any]:
+    """One door release, shaped the way the live API returns them."""
+    return {
+        "id": entry_id,
+        "logged_at": logged_at,
+        "access_point": ACCESS_POINT_ID,
+        "release_status": "Unlocked",
+        "release_type": "Tenant",
+        "entry_method": entry_method,
+        "name": "Ada Lovelace",
+        "unit": UNIT_ID,
+        "tenant_id": TENANT_ID,
+        "image_url": "https://bmx-rails-production.s3.amazonaws.com/cache/x.jpeg",
+    }
+
+
+def call_payload(call_id: int = 900001, logged_at: str = "2026-08-04T12:00:00Z") -> dict[str, Any]:
+    """Build a single call log entry."""
+    return {
+        "id": call_id,
+        "building_id": BUILDING_ID,
+        "logged_at": logged_at,
+        "notification_type": "visitor",
+        "recipient": {"id": TENANT_ID, "type": "Tenant"},
+        "unit": {"id": UNIT_ID},
+        "device": {"id": 5005, "name": "Lobby Panel"},
+        "status": "initializing",
+        "image_url": "https://cdn.example.com/snap.png",
+    }
+
 
 @pytest.fixture
 def config_entry() -> MockConfigEntry:
@@ -130,11 +170,15 @@ def config_entry() -> MockConfigEntry:
 
 @pytest.fixture
 def mock_topology(aioclient_mock):
-    """Mock the topology and an empty call log."""
+    """Mock the topology, and empty call and access logs."""
     aioclient_mock.get(f"{API_URL}/v4/tenants", json=TENANTS_RESPONSE)
     aioclient_mock.get(f"{API_URL}/v4/access_points", json=ACCESS_POINTS_RESPONSE)
     aioclient_mock.get(f"{API_URL}/v4/devices", json=DEVICES_RESPONSE)
     aioclient_mock.get(
         f"{API_URL}/v4/buildings/{BUILDING_ID}/calls", json=EMPTY_CALLS_RESPONSE
+    )
+    aioclient_mock.get(
+        f"{API_URL}/v4/buildings/{BUILDING_ID}/access_logs",
+        json=EMPTY_ACCESS_LOGS_RESPONSE,
     )
     return aioclient_mock

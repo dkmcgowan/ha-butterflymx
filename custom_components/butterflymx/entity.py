@@ -7,11 +7,12 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, MANUFACTURER
 from .coordinator import (
+    ButterflyMXAccessLogCoordinator,
     ButterflyMXCallCoordinator,
     ButterflyMXTopologyCoordinator,
     LockTarget,
 )
-from .models import Call, Tenant
+from .models import AccessLogEntry, Call, Tenant
 
 
 def building_device_info(building_id: int, building_name: str | None) -> DeviceInfo:
@@ -71,4 +72,23 @@ class ButterflyMXCallEntity(CoordinatorEntity[ButterflyMXCallCoordinator]):
     @property
     def _latest_call(self) -> Call | None:
         """Return the most recent call seen for this tenant."""
+        return (self.coordinator.data or {}).get(self._tenant.id)
+
+
+class ButterflyMXAccessLogEntity(CoordinatorEntity[ButterflyMXAccessLogCoordinator]):
+    """Base entity for things derived from the door release log."""
+
+    _attr_has_entity_name = True
+
+    def __init__(
+        self, coordinator: ButterflyMXAccessLogCoordinator, tenant: Tenant
+    ) -> None:
+        """Initialize the entity."""
+        super().__init__(coordinator)
+        self._tenant = tenant
+        self._attr_device_info = unit_device_info(tenant)
+
+    @property
+    def _latest_release(self) -> AccessLogEntry | None:
+        """Return the most recent door release seen for this tenancy."""
         return (self.coordinator.data or {}).get(self._tenant.id)

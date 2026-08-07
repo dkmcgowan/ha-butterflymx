@@ -311,6 +311,77 @@ class Call:
 
 
 @dataclass(frozen=True, slots=True)
+class AccessLogEntry:
+    """A door that was opened, and how."""
+
+    id: int
+    logged_at: datetime | None = None
+    access_point_id: int | None = None
+    release_status: str | None = None
+    release_type: str | None = None
+    entry_method: str | None = None
+    access_tool_id: int | None = None
+    image_url: str | None = None
+    tenant_id: int | None = None
+    unit_id: int | None = None
+
+    @classmethod
+    def from_api(cls, data: dict[str, Any]) -> AccessLogEntry | None:
+        """Build an AccessLogEntry from an API payload."""
+        entry_id = _int_or_none(data.get("id"), field_name="access_log.id")
+        if entry_id is None:
+            _LOGGER.warning(
+                "Ignoring ButterflyMX access log entry with no usable id: %s", data
+            )
+            return None
+
+        # entry_method arrives either as a phrase such as "App call" or "Swipe
+        # to open", or as an object naming the thing used, {"access_tool": 123}
+        # for a PIN or a fob.  Both are reduced to a name, keeping the ID.
+        method: Any = data.get("entry_method")
+        access_tool_id: int | None = None
+        if isinstance(method, dict):
+            key = next(iter(method), None)
+            access_tool_id = _int_or_none(
+                method.get(key), field_name="access_log.entry_method"
+            )
+            method = key
+        elif method is not None and not isinstance(method, str):
+            method = str(method)
+
+        return cls(
+            id=entry_id,
+            logged_at=_parse_dt(
+                data.get("logged_at"), field_name="access_log.logged_at"
+            ),
+            access_point_id=_int_or_none(
+                data.get("access_point"), field_name="access_log.access_point"
+            ),
+            release_status=data.get("release_status"),
+            release_type=data.get("release_type"),
+            entry_method=method,
+            access_tool_id=access_tool_id,
+            image_url=data.get("image_url"),
+            tenant_id=_int_or_none(
+                data.get("tenant_id"), field_name="access_log.tenant_id"
+            ),
+            unit_id=_int_or_none(data.get("unit"), field_name="access_log.unit"),
+        )
+
+    def as_event_data(self) -> dict[str, Any]:
+        """Serialize this door release for the Home Assistant event bus."""
+        return {
+            "access_log_id": self.id,
+            "access_point_id": self.access_point_id,
+            "release_status": self.release_status,
+            "release_type": self.release_type,
+            "entry_method": self.entry_method,
+            "access_tool_id": self.access_tool_id,
+            "logged_at": self.logged_at.isoformat() if self.logged_at else None,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class ButterflyMXTopology:
     """Everything the integration knows about the account's doors.
 

@@ -28,11 +28,14 @@ from homeassistant.util import dt as dt_util
 
 from .api import ButterflyMXClient
 from .const import (
+    ACCESS_LOG_LOOKBACK,
+    ACCESS_LOG_SCAN_INTERVAL,
     CALL_LOOKBACK,
     CALL_POLL_OVERLAP,
     DIRECT_LOCK_DEVICE_TYPES,
     DOMAIN,
     EVENT_CALL,
+    EVENT_DOOR_RELEASE,
     TOPOLOGY_SCAN_INTERVAL,
 )
 from .exceptions import (
@@ -41,6 +44,7 @@ from .exceptions import (
     ButterflyMXError,
 )
 from .models import (
+    AccessLogEntry,
     AccessPoint,
     ButterflyMXTopology,
     Call,
@@ -385,3 +389,145 @@ def _is_older(call: Call, other: Call) -> bool:
     if call.logged_at and other.logged_at:
         return call.logged_at < other.logged_at
     return call.id < other.id
+
+
+class ButterflyMXAccessLogCoordinator(DataUpdateCoordinator[dict[int, AccessLogEntry]]):
+    """Polls the access log and announces doors that were opened.
+
+    ``data`` maps a tenant ID to the most recent door release for that tenant.
+
+    Deliberately slower than the call loop.  A visitor at the door is a call and
+    has its own fast path; this is the record of doors having been opened, which
+    is worth knowing about but not worth doubling the request count for.
+    """
+
+    config_entry: ButterflyMXConfigEntry
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        entry: ConfigEntry,
+        client: ButterflyMXClient,
+        topology_coordinator: ButterflyMXTopologyCoordinator,
+    ) -> None:
+        """Initialize the access log coordinator."""
+        super().__init__(
+            hass,
+            _LOGGER,
+            config_entry=entry,
+            name=f"{DOMAIN} access log",
+            update_interval=timedelta(seconds=ACCESS_LOG_SCAN_INTERVAL),
+        )
+        self.client = client
+        self.topology_coordinator = topology_coordinator
+        self._seen_ids: dict[int, None] = {}
+        self._since: datetime | None = None
+        self._listeners_for_releases: list[
+            Callable[[Tenant, AccessLogEntry], None]
+        ] = []
+        # As with calls: the first poll marks what already happened as seen
+        # rather than announcing a door that was opened before Home Assistant
+        # started.
+        self._priming = True
+
+    @callback
+    def async_add_release_listener(
+        self, listener: Callable[[Tenant, AccessLogEntry], None]
+    ) -> Callable[[], None]:
+        """Register a callback fired for each newly observed door release."""
+        self._listeners_for_releases.append(listener)
+
+        @callback
+        def _remove() -> None:
+            if listener in self._listeners_for_releases:
+                self._listeners_for_releases.remove(listener)
+
+        return _remove
+
+    async def _async_update_data(self) -> dict[int, AccessLogEntry]:
+        """Poll every building the user has a tenancy in."""
+        topology = self.topology_coordinator.data
+        if topology is None:
+            return dict(self.data or {})
+
+        since = self._since or dt_util.utcnow() - timedelta(
+            seconds=ACCESS_LOG_LOOKBACK
+        )
+        poll_started = dt_util.utcnow()
+
+        entries: list[AccessLogEntry] = []
+        try:
+            for building_id in topology.building_ids:
+                entries.extend(
+                    await self.client.async_get_access_logs(building_id, since=since)
+                )
+        except ButterflyMXAuthError as err:
+            raise ConfigEntryAuthFailed(str(err)) from err
+        except ButterflyMXConnectionError as err:
+            raise UpdateFailed(f"Could not reach ButterflyMX: {err}") from err
+        except ButterflyMXError as err:
+            raise UpdateFailed(str(err)) from err
+
+        self._since = poll_started - timedelta(seconds=CALL_POLL_OVERLAP)
+        data = self._process(entries, topology)
+        self._priming = False
+        return data
+
+    def _process(
+        self, entries: list[AccessLogEntry], topology: ButterflyMXTopology
+    ) -> dict[int, AccessLogEntry]:
+        """Deduplicate, announce and index new releases by tenant."""
+        latest: dict[int, AccessLogEntry] = dict(self.data or {})
+
+        fresh = [entry for entry in entries if entry.id not in self._seen_ids]
+        fresh.sort(
+            key=lambda e: (e.logged_at or dt_util.utc_from_timestamp(0), e.id)
+        )
+
+        for entry in fresh:
+            self._remember(entry.id)
+            tenant = self._match_tenant(entry, topology)
+            if tenant is None:
+                _LOGGER.debug(
+                    "Ignoring access log entry %s: no matching tenant", entry.id
+                )
+                continue
+
+            previous = latest.get(tenant.id)
+            if previous is not None and entry.id < previous.id:
+                continue
+            latest[tenant.id] = entry
+
+            if self._priming:
+                continue
+
+            self.hass.bus.async_fire(
+                EVENT_DOOR_RELEASE,
+                {
+                    "entry_id": self.config_entry.entry_id,
+                    "tenant_id": tenant.id,
+                    "unit_label": tenant.unit_label,
+                    **entry.as_event_data(),
+                },
+            )
+            for listener in list(self._listeners_for_releases):
+                listener(tenant, entry)
+
+        return latest
+
+    def _remember(self, entry_id: int) -> None:
+        """Record an entry ID, evicting the oldest once the cache is full."""
+        self._seen_ids[entry_id] = None
+        while len(self._seen_ids) > _SEEN_CALL_LIMIT:
+            self._seen_ids.pop(next(iter(self._seen_ids)))
+
+    @staticmethod
+    def _match_tenant(
+        entry: AccessLogEntry, topology: ButterflyMXTopology
+    ) -> Tenant | None:
+        """Find the tenancy a door release belongs to."""
+        if entry.tenant_id is not None:
+            for tenant in topology.tenants:
+                if tenant.id == entry.tenant_id:
+                    return tenant
+        return topology.tenant_for_unit(entry.unit_id)

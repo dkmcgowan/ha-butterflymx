@@ -29,8 +29,14 @@ them by hand.
 | `event.unit_4b_doorbell` | Fires the instant a visitor calls your unit. Use it to trigger notifications. |
 | `image.unit_4b_last_call_snapshot` | The photo the intercom took of your most recent visitor. |
 | `sensor.unit_4b_last_call` | When the last call happened, and who or what it came from. |
+| `event.unit_4b_door_opened` | Fires whenever one of your doors is opened, however it happened: a PIN at the keypad, a fob, someone answering the intercom in the app, or Home Assistant. |
+| `sensor.unit_4b_last_door_opened` | When a door was last opened, which one, and by what method. |
 
 Names will match your own building and unit.
+
+The door entities only ever cover your own tenancy. ButterflyMX scopes the
+access log to the signed-in resident, so you see your own comings and goings and
+not the neighbours'.
 
 ## Before you start
 
@@ -306,12 +312,16 @@ and `5xx`, honoring `Retry-After`. Door releases are never retried, because a
 retry could open a door twice, and repeated releases of the same door within
 3 seconds are dropped. Building topology is refreshed hourly.
 
-Calls are read from the call log, always. When webhook push is on, a delivery
-does not carry the call: it only tells the integration to read the log
-immediately. A delivery has no call ID the REST API recognises, no timestamp,
+Calls are read from the call log and door openings from the access log, always.
+When webhook push is on, a delivery does not carry either: it only tells the
+integration to read the logs immediately. A delivery has no call ID the REST API recognises, no timestamp,
 and nothing saying whether anyone answered, so using it as data would mean
-ringing the doorbell twice for one visitor and knowing less about it. The log is
-the single source of truth and push just makes it prompt.
+ringing the doorbell twice for one visitor and knowing less about it. The logs
+are the single source of truth and push just makes them prompt.
+
+The access log is polled more slowly than the call log. A visitor at the door is
+a call and needs to be immediate; a door having been opened is worth knowing but
+does not need checking every few seconds.
 
 Issues and pull requests are welcome.
 
