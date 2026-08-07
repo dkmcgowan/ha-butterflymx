@@ -300,8 +300,15 @@ recipient field to branch on inside an automation, because every call your
 account can see was placed to you.
 
 So if you want each person's calls to reach their own phone, **add the
-integration twice**, once per ButterflyMX login. Both entries can live side by
-side; what you branch on is which doorbell fired, not who a call was for.
+integration twice**, once per ButterflyMX login. Each doorbell entity is tied to
+one resident for good, so the entity that fired *is* the answer to who the call
+was for — there is no ID to inspect.
+
+How exact that is depends on your building's directory. If it lists residents
+separately, as in "David Unit 4B" and "Blair Unit 4B", a visitor picks a name
+and only that person's doorbell fires. If it lists the unit once instead, a
+visitor rings the unit and both doorbells fire for the same person at the door,
+which means two notifications unless you handle it.
 
 ```yaml
 automation:
@@ -347,6 +354,10 @@ Three things to expect when you set up the second one:
   apart before you write any automations, as the example above assumes.
 - **Passes are per login too.** Each `sensor.*_passes` shows the codes created
   by that account. A code your partner made in the app appears under theirs.
+
+Door releases need none of this care. The access log is scoped per resident, so
+whoever's `event.*_door_opened` fires is whoever opened the door, which makes
+"someone got home" automations straightforward.
 
 Before doing any of this, check whether you need it. If you share a unit,
 buzzing it may already reach whichever account is set up, and one entry is
