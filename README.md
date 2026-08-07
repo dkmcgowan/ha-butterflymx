@@ -39,7 +39,9 @@ Names will match your own building and unit.
 
 The door entities only ever cover your own tenancy. ButterflyMX scopes the
 access log to the signed-in resident, so you see your own comings and goings and
-not the neighbours'.
+not the neighbours'. That applies to whoever else lives with you as well — if
+you each have your own ButterflyMX login, see
+[Two residents, two logins](#two-residents-two-logins).
 
 ## Before you start
 
@@ -284,6 +286,76 @@ building, and an automation makes typos at three in the morning without anyone
 watching. The response gives you the PIN and the QR link; send them yourself,
 through a notify service you already trust.
 
+## Two residents, two logins
+
+Home Assistant runs integrations for the whole instance, not per user account.
+Signing in to Home Assistant as yourself does not give you a different
+ButterflyMX than anyone else in the house sees. What the integration is signed
+in to ButterflyMX as, everybody gets.
+
+And **one ButterflyMX login only ever sees its own calls.** ButterflyMX scopes
+the call log to the signed-in resident, so if two of you have separate
+ButterflyMX accounts, one setup covers exactly one of you. There is no
+recipient field to branch on inside an automation, because every call your
+account can see was placed to you.
+
+So if you want each person's calls to reach their own phone, **add the
+integration twice**, once per ButterflyMX login. Both entries can live side by
+side; what you branch on is which doorbell fired, not who a call was for.
+
+```yaml
+automation:
+  - alias: "Doorbell goes to the right phone"
+    triggers:
+      - trigger: state
+        entity_id: event.davids_doorbell
+        id: david
+      - trigger: state
+        entity_id: event.sarahs_doorbell
+        id: sarah
+    actions:
+      - choose:
+          - conditions:
+              - condition: trigger
+                id: david
+            sequence:
+              - action: notify.mobile_app_davids_phone
+                data:
+                  message: "Someone is at the door"
+                  data:
+                    image: "{{ trigger.to_state.attributes.image_url }}"
+          - conditions:
+              - condition: trigger
+                id: sarah
+            sequence:
+              - action: notify.mobile_app_sarahs_phone
+                data:
+                  message: "Someone is at the door"
+                  data:
+                    image: "{{ trigger.to_state.attributes.image_url }}"
+```
+
+Three things to expect when you set up the second one:
+
+- **The doors appear only once.** Locks are identified by the door, not by the
+  account, so the second setup finds them already claimed and leaves them
+  alone. That is what you want — one front door, one `lock.front_entrance` —
+  but it does mean the locks belong to whichever entry was added first, and
+  removing that entry takes them with it. Add it back and they return.
+- **If you share a unit, the two sets of entities arrive with nearly identical
+  names**, since both are "Unit 4B". Rename them to something you can tell
+  apart before you write any automations, as the example above assumes.
+- **Passes are per login too.** Each `sensor.*_passes` shows the codes created
+  by that account. A code your partner made in the app appears under theirs.
+
+Before doing any of this, check whether you need it. If you share a unit,
+buzzing it may already reach whichever account is set up, and one entry is
+simpler than two.
+
+> Not yet tried on a live instance. Two entries is a supported arrangement and
+> the account scoping above was checked against a real account, but nobody has
+> run two side by side yet. If it misbehaves, please open an issue.
+
 ## Settings
 
 **Settings → Devices & services → ButterflyMX → Configure**
@@ -346,7 +418,7 @@ cameras on your own network, Home Assistant can usually connect to them directly
 which works far better than going through ButterflyMX anyway.
 
 **Can I create visitor or delivery codes?**
-Not yet. It is planned.
+Yes. See [Visitor and delivery passes](#visitor-and-delivery-passes).
 
 **Will it work in my building?**
 If ButterflyMX is installed and you are a resident with an account, yes.
