@@ -38,7 +38,11 @@ def auto_enable_custom_integrations(enable_custom_integrations):
 
 
 def make_token(expires_in: int = 86400, suffix: str = "1") -> dict[str, Any]:
-    """Build a token payload as ButterflyMX would return it."""
+    """Build a stored token, as it looks after normalize_token has run.
+
+    Not quite what ButterflyMX returns: expires_at is ours, added when the
+    response is read. The rest matches a real token response.
+    """
     return {
         "access_token": f"access-{suffix}",
         "refresh_token": f"refresh-{suffix}",
@@ -56,7 +60,10 @@ TENANTS_RESPONSE = {
             "id": TENANT_ID,
             "first_name": "Ada",
             "last_name": "Lovelace",
-            "full_name": "Ada Lovelace",
+            # Null on a live account, so display_name falls back to the
+            # name parts. Populating it here would test a path real
+            # installs do not take.
+            "full_name": None,
             "email": "ada@example.com",
             "building_id": BUILDING_ID,
             "building_name": "Crimson",

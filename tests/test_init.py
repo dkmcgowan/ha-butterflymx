@@ -154,7 +154,7 @@ async def test_the_door_returns_to_locked_on_its_own(
 async def test_open_uses_device_id_for_unit_lock(
     hass: HomeAssistant, mock_topology, config_entry: MockConfigEntry
 ) -> None:
-    """A unit smart lock is opened by device ID."""
+    """A door not reachable as an access point is opened by device ID."""
     mock_topology.post(f"{API_URL}/v4/door_release_requests", status=201, json={})
     await _setup(hass, config_entry)
 

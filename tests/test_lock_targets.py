@@ -57,8 +57,12 @@ def test_access_points_become_locks() -> None:
     assert targets[0].tenant_id == 1
 
 
-def test_unit_smart_locks_become_locks() -> None:
-    """Unit smart locks are addressed by device ID."""
+def test_locks_not_behind_an_access_point_are_addressed_by_device() -> None:
+    """Doors belong to buildings, never to units.
+
+    Most arrive as access points. One that does not has to be released by
+    device ID instead.
+    """
     topology = ButterflyMXTopology(
         tenants=[_tenant()], devices=[_device(501, 7, "smart_lock")]
     )

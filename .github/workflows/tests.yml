@@ -6,15 +6,24 @@ on:
   pull_request:
   workflow_dispatch:
 
+# A second push supersedes the first; no point finishing a run nobody will read.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     name: pytest
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
+          # Home Assistant and its dependencies are a big install to repeat
+          # on every run.
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip

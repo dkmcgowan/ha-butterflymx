@@ -108,6 +108,9 @@ def test_call_parsing_and_event_data() -> None:
     assert data["call_id"] == 5
     assert data["unit_id"] == 9
     assert data["logged_at"] == "2026-08-04T12:00:00+00:00"
+    # Who was called. On a multi-unit account the unit alone does not say.
+    assert data["recipient_id"] == 1
+    assert data["recipient_type"] == "Tenant"
 
 
 def test_call_building_id_fallback() -> None:
@@ -131,3 +134,29 @@ def test_topology_lookups() -> None:
     assert topology.tenant_for_building(8) is None
     assert topology.tenant_for_unit(9) is tenant
     assert topology.tenant_for_unit(None) is None
+
+
+def test_tenant_for_building_is_the_same_one_every_time() -> None:
+    """Two tenancies in one building must not resolve by luck of the ordering.
+
+    Whichever is picked becomes the identity a door release is performed as, so
+    it has to survive a restart and an API that promises no order.
+    """
+    low = Tenant.from_api({"id": 3, "building_id": 7})
+    high = Tenant.from_api({"id": 9, "building_id": 7})
+    assert low is not None and high is not None
+
+    assert ButterflyMXTopology(tenants=[low, high]).tenant_for_building(7) is low
+    assert ButterflyMXTopology(tenants=[high, low]).tenant_for_building(7) is low
+
+
+def test_building_ids_keep_their_order_and_drop_duplicates() -> None:
+    """Several tenancies in one building yield that building once."""
+    tenants = [
+        Tenant.from_api({"id": 1, "building_id": 7}),
+        Tenant.from_api({"id": 2, "building_id": 8}),
+        Tenant.from_api({"id": 3, "building_id": 7}),
+    ]
+    topology = ButterflyMXTopology(tenants=[t for t in tenants if t])
+
+    assert topology.building_ids == [7, 8]

@@ -36,7 +36,13 @@ for arg in "$@"; do
     case "$arg" in
         --no-restart) RESTART=0 ;;
         --logs) FOLLOW_LOGS=1 ;;
-        -h|--help) sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        # Print the header block, stopping at the first line that is not a
+        # comment, rather than a line range that goes stale when it is edited.
+        -h|--help)
+            awk 'NR>1 && /^#/ {sub(/^# ?/, ""); print; next} NR>1 {exit}' \
+                "${BASH_SOURCE[0]}"
+            exit 0
+            ;;
         *) echo "unknown argument: $arg" >&2; exit 2 ;;
     esac
 done
