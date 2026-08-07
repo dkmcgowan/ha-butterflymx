@@ -234,6 +234,10 @@ async def test_startup_does_not_replay_old_calls(
         f"{API_URL}/v4/buildings/{BUILDING_ID}/calls",
         json={"data": [call_payload()], "page_info": {"next_page": None}},
     )
+    aioclient_mock.get(
+        f"{API_URL}/v4/buildings/{BUILDING_ID}/access_logs",
+        json={"data": [], "page_info": {"next_page": None}},
+    )
 
     events: list = []
     hass.bus.async_listen(EVENT_CALL, events.append)

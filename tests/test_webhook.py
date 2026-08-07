@@ -15,7 +15,6 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.butterflymx.const import (
     CONF_ENABLE_WEBHOOK,
-    DEFAULT_CALL_SCAN_INTERVAL,
     WEBHOOK_FALLBACK_SCAN_INTERVAL,
 )
 from custom_components.butterflymx.webhook import ButterflyMXWebhookManager
@@ -76,27 +75,25 @@ async def test_a_delivery_makes_us_read_the_call_log(
     assert refresh.called
 
 
-async def test_push_only_slows_polling_once_it_has_proved_itself(
+async def test_registering_push_slows_polling_without_stopping_it(
     hass: HomeAssistant, mock_topology, config_entry: MockConfigEntry
 ) -> None:
-    """Registering proves nothing; an arriving delivery does.
+    """Push makes the doorbell immediate; polling stays on as a safety net.
 
-    ButterflyMX accepting a URL says nothing about whether it can reach this
-    host. Slowing down on registration alone would leave an unreachable install
-    on five minute doorbells with no clue why.
+    It cannot be switched off. A delivery that lands while Home Assistant is
+    restarting is gone for good, ButterflyMX does not send it again, and a
+    registration whose URL has gone stale fails silently. A slow poll is what
+    catches all three.
     """
     await _setup_with_push(hass, config_entry)
     runtime = config_entry.runtime_data
 
-    # Registered, but nothing has arrived yet.
-    assert runtime.calls.update_interval == timedelta(seconds=DEFAULT_CALL_SCAN_INTERVAL)
-
-    with patch.object(runtime.calls, "async_request_refresh", AsyncMock()):
-        await _deliver(hass, runtime.webhook, REAL_DELIVERY)
-
     assert runtime.calls.update_interval == timedelta(
         seconds=WEBHOOK_FALLBACK_SCAN_INTERVAL
     )
+    # Slower, never zero.
+    assert runtime.calls.update_interval is not None
+    assert runtime.access_log.update_interval is not None
 
 
 @pytest.mark.parametrize(
