@@ -101,11 +101,17 @@ class ButterflyMXPassEntity(CoordinatorEntity[ButterflyMXPassCoordinator]):
     _attr_has_entity_name = True
 
     def __init__(
-        self, coordinator: ButterflyMXPassCoordinator, tenant: Tenant
+        self,
+        coordinator: ButterflyMXPassCoordinator,
+        tenant: Tenant,
+        topology: ButterflyMXTopologyCoordinator,
     ) -> None:
         """Initialize the entity."""
         super().__init__(coordinator)
         self.tenant = tenant
+        # Carried so a pass can be scoped to particular doors: the service is
+        # given lock entities and has to find the doors behind them.
+        self.topology = topology
         self._attr_device_info = unit_device_info(tenant)
 
     @property

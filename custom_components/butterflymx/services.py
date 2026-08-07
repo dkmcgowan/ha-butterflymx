@@ -50,6 +50,7 @@ from .const import (
     SERVICE_LIST_PASSES,
     SERVICE_REVOKE_PASS,
 )
+from .coordinator import build_lock_targets
 from .exceptions import ButterflyMXError
 from .models import Pass
 
@@ -284,31 +285,41 @@ def _resolve_doors(
     """Turn lock entities into the door IDs ButterflyMX wants.
 
     Users pick doors the way they see them, as the lock entities this
-    integration already created.  Each one's unique ID says which kind of door
-    is behind it, and that is the only translation needed.
+    integration already created.  The translation back to ButterflyMX IDs is
+    done by finding the door that produced each entity, rather than by taking
+    its unique ID apart: the ID is a formatting detail, and reading it as data
+    means a change to the format silently turns into "not a door".
+
+    Matching this way also scopes the answer correctly.  A door belonging to a
+    different ButterflyMX login is not in this entry's topology, so it is
+    refused rather than quietly granted on the wrong account.
     """
     registry = er.async_get(entity.hass)
+    topology = entity.topology.data
+    doors = {
+        target.unique_key: target
+        for target in (build_lock_targets(topology) if topology else [])
+    }
+
     access_point_ids: list[int] = []
     device_ids: list[int] = []
 
     for entity_id in entity_ids:
         record = registry.async_get(entity_id)
-        if record is None or record.platform != DOMAIN:
+        target = (
+            doors.get(record.unique_id.removeprefix(f"{DOMAIN}_"))
+            if record is not None and record.platform == DOMAIN
+            else None
+        )
+        if target is None:
             raise ServiceValidationError(
                 translation_domain=DOMAIN,
                 translation_key="not_a_butterflymx_door",
                 translation_placeholders={"entity": entity_id},
             )
-        kind, _, raw_id = record.unique_id.removeprefix(f"{DOMAIN}_").rpartition("_")
-        if kind == "access_point":
-            access_point_ids.append(int(raw_id))
-        elif kind == "device":
-            device_ids.append(int(raw_id))
+        if target.access_point_id is not None:
+            access_point_ids.append(target.access_point_id)
         else:
-            raise ServiceValidationError(
-                translation_domain=DOMAIN,
-                translation_key="not_a_butterflymx_door",
-                translation_placeholders={"entity": entity_id},
-            )
+            device_ids.append(target.device_id)
 
     return access_point_ids, device_ids

@@ -21,6 +21,7 @@ from .coordinator import (
     ButterflyMXAccessLogCoordinator,
     ButterflyMXCallCoordinator,
     ButterflyMXPassCoordinator,
+    ButterflyMXTopologyCoordinator,
 )
 from .entity import (
     ButterflyMXAccessLogEntity,
@@ -55,7 +56,9 @@ async def async_setup_entry(
             new_entities.append(
                 ButterflyMXLastDoorReleaseSensor(runtime.access_log, tenant)
             )
-            new_entities.append(ButterflyMXPassesSensor(runtime.passes, tenant))
+            new_entities.append(
+                ButterflyMXPassesSensor(runtime.passes, tenant, topology_coordinator)
+            )
         if new_entities:
             async_add_entities(new_entities)
 
@@ -155,10 +158,13 @@ class ButterflyMXPassesSensor(ButterflyMXPassEntity, SensorEntity):
     _attr_translation_key = "active_passes"
 
     def __init__(
-        self, coordinator: ButterflyMXPassCoordinator, tenant: Tenant
+        self,
+        coordinator: ButterflyMXPassCoordinator,
+        tenant: Tenant,
+        topology: ButterflyMXTopologyCoordinator,
     ) -> None:
         """Initialize the sensor."""
-        super().__init__(coordinator, tenant)
+        super().__init__(coordinator, tenant, topology)
         self._attr_unique_id = f"{DOMAIN}_tenant_{tenant.id}_active_passes"
 
     @property
