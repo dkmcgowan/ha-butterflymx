@@ -157,6 +157,9 @@ actions:
           - condition: template
             value_template: "{{ wait.trigger is not none }}"
         sequence:
+          - action: butterflymx.decline_call
+            target:
+              entity_id: event.<unit>_doorbell
           - action: notify.mobile_app_<your_phone>
             data:
               message: clear_notification
@@ -201,10 +204,14 @@ that name already exists: rename it, or turn on "Pop on screen" for it in
 Android's notification settings. These are Android options; on iOS use a `push`
 block instead.
 
-**"Decline" only dismisses the notification.** ButterflyMX has no endpoint for
-answering or declining a call. The API can list calls and open doors, and that
-is all, so nothing here can hang up on a visitor or stop their intercom
-ringing. They give up, or you answer in the ButterflyMX app.
+**"Decline" really does end the call.** `butterflymx.decline_call` sends the
+same command the app's own Decline button sends, so the panel stops dialing
+instead of rolling the visitor over to a phone call. Clearing the notification
+afterwards is only tidying up. What it cannot do is let you speak to them:
+answering exists only in ButterflyMX's app.
+
+Opening the door needs no equivalent. `lock.open` tells the panel by itself
+whenever a visitor is calling, which is why the example just opens the lock.
 
 The photo needs no special setup: `image_url` points at a plain web address
 your phone can load directly, unlike a camera snapshot that would need Home
