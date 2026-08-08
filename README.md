@@ -46,7 +46,7 @@ picker.
 
 The door entities only ever cover your own tenancy. ButterflyMX scopes the
 access log to the signed-in resident, so you see your own comings and goings and
-not the neighbours'. That applies to whoever else lives with you as well. If you
+not the neighbors'. That applies to whoever else lives with you as well. If you
 each have your own ButterflyMX login, see
 [Two residents, two logins](#two-residents-two-logins).
 
@@ -58,7 +58,7 @@ each have your own ButterflyMX login, see
 2. **Home Assistant 2025.3 or newer.**
 3. **A ButterflyMX client ID**, but only if this copy does not ship one. Setup
    asks if it needs it; get one from
-   [their developer programme](https://apidocs.butterflymx.com/docs/getting-started).
+   [their developer program](https://apidocs.butterflymx.com/docs/getting-started).
    It identifies the application rather than you, and is a public client, so
    there is no secret to go with it.
 
@@ -520,7 +520,7 @@ ButterflyMX and its logo are trademarks of ButterflyMX, Inc. The images in
 product this integration talks to, the way Home Assistant's
 [brands repository](https://github.com/home-assistant/brands) does for every
 integration. This project is not built, endorsed or supported by ButterflyMX,
-and the MIT licence covers the code here, not those images.
+and the MIT license covers the code here, not those images.
 
 ## License
 

@@ -167,7 +167,7 @@ class ButterflyMXLock(ButterflyMXTopologyEntity, LockEntity):
 
         Opening a door and answering a call are two different things to
         ButterflyMX, and v4 only does the first.  Without this the panel carries
-        on dialling and rolls over to a phone call, even though the visitor is
+        on dialing and rolls over to a phone call, even though the visitor is
         already inside.  The official app sends the same command when you open
         the door from its notification.
 

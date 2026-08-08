@@ -3,7 +3,7 @@
     "step": {
       "credentials": {
         "title": "ButterflyMX API credentials",
-        "description": "This copy of the integration does not ship a client ID, so you need one of your own from ButterflyMX's developer programme. Leave the redirect URI at its default unless ButterflyMX registered a custom one for your application.",
+        "description": "This copy of the integration does not ship a client ID, so you need one of your own from ButterflyMX's developer program. Leave the redirect URI at its default unless ButterflyMX registered a custom one for your application.",
         "data": {
           "client_id": "Client ID",
           "redirect_uri": "Redirect URI"
@@ -93,7 +93,7 @@
       "fields": {
         "name": {
           "name": "Name",
-          "description": "What this pass is for. It is what the access log shows when the code is used, so make it something you will recognise later."
+          "description": "What this pass is for. It is what the access log shows when the code is used, so make it something you will recognize later."
         }
       }
     },
@@ -135,7 +135,7 @@
     },
     "decline_call": {
       "name": "Decline call",
-      "description": "Stops a visitor being dialled without opening the door, the same thing Decline does in the ButterflyMX app. Without it the panel keeps ringing and eventually rolls the visitor over to a phone call. Only works while a call is actually ringing."
+      "description": "Stops a visitor being dialed without opening the door, the same thing Decline does in the ButterflyMX app. Without it the panel keeps ringing and eventually rolls the visitor over to a phone call. Only works while a call is actually ringing."
     }
   },
   "exceptions": {

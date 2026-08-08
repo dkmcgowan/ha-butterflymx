@@ -361,7 +361,7 @@ class ButterflyMXClient:
         """List recent door releases for a building, newest first.
 
         Scoped to the signed-in resident: on a live account every entry carried
-        their own tenant and unit, so this does not report the neighbours.
+        their own tenant and unit, so this does not report the neighbors.
         """
         params: dict[str, Any] = {"page": 1, "per": min(limit, PAGE_SIZE)}
         if since is not None:
@@ -546,7 +546,7 @@ class ButterflyMXClient:
     async def async_notify_panel(self, command: str, handle: CallHandle) -> None:
         """Tell the panel a call has been handled.
 
-        Without this the panel keeps dialling and rolls over to a phone call,
+        Without this the panel keeps dialing and rolls over to a phone call,
         even though the door has already been opened.  Releasing a door and
         telling the panel about it are two separate things, and only the first
         one is in v4.

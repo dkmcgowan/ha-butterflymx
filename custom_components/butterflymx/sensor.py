@@ -1,4 +1,4 @@
-"""Sensors summarising recent ButterflyMX activity."""
+"""Sensors summarizing recent ButterflyMX activity."""
 
 from __future__ import annotations
 

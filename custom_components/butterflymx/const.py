@@ -29,7 +29,7 @@ CONF_WEBHOOK_INTEGRATION_IDS: Final = "webhook_integration_ids"
 # The OAuth client this integration authorizes as.
 #
 # Leave empty and setup asks the user for their own client ID, which means
-# applying to ButterflyMX's developer programme first.  Fill it in and setup
+# applying to ButterflyMX's developer program first.  Fill it in and setup
 # skips that step entirely.
 #
 # It is not a secret and cannot be one.  ButterflyMX issues public clients, so

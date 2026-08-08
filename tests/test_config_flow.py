@@ -88,7 +88,7 @@ async def test_a_shipped_client_id_skips_straight_to_signing_in(
     """With a client ID shipped there is nothing to ask for.
 
     Setup becomes a single step: sign in and paste the code back. Nobody has to
-    apply to a developer programme first.
+    apply to a developer program first.
     """
     aioclient_mock.post(TOKEN_URL, json=TOKEN_RESPONSE)
     aioclient_mock.get(f"{API_URL}/v4/tenants", json=TENANTS_RESPONSE)

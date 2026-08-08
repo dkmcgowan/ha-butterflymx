@@ -67,7 +67,7 @@ async def async_setup_entry(
 
 
 async def _async_decline_call(entity: Entity, call: ServiceCall) -> None:
-    """Stop a visitor being dialled without opening the door.
+    """Stop a visitor being dialed without opening the door.
 
     ButterflyMX has no "decline" in v4, so this is the same command the official
     app sends from its own notification.  Without it the panel keeps ringing and

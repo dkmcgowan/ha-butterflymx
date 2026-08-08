@@ -132,7 +132,7 @@ class ButterflyMXConfigFlow(ConfigFlow, domain=DOMAIN):
         """Ask for a client ID, when the integration does not ship one.
 
         Reached only if DEFAULT_CLIENT_ID is empty, which means the user has to
-        have applied to ButterflyMX's developer programme themselves.
+        have applied to ButterflyMX's developer program themselves.
         """
         if user_input is not None:
             self._client_id = user_input[CONF_CLIENT_ID].strip()

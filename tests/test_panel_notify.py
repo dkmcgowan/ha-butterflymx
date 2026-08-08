@@ -2,7 +2,7 @@
 
 Opening a door and answering a call are separate things to ButterflyMX, and v4
 only does the first. Release the door and nothing else, and the panel carries on
-dialling until it rolls the visitor over to a phone call, which is what happened
+dialing until it rolls the visitor over to a phone call, which is what happened
 on a real install before this existed.
 
 The second half lives in v3, so these tests also pin the request shape: get it
@@ -121,7 +121,7 @@ def test_an_unusable_v3_call_is_dropped(mangle) -> None:
 async def test_opening_the_door_tells_the_panel(
     hass: HomeAssistant, aioclient_mock, config_entry: MockConfigEntry, freezer
 ) -> None:
-    """The whole point: the visitor is inside, so stop dialling them.
+    """The whole point: the visitor is inside, so stop dialing them.
 
     Pins the v3 request exactly. A wrong path or body shape fails silently, as a
     panel that keeps ringing, which no amount of v4 testing would catch.
@@ -263,7 +263,7 @@ async def test_a_panel_that_cannot_be_told_does_not_fail_the_unlock(
 async def test_declining_ends_the_call(
     hass: HomeAssistant, aioclient_mock, config_entry: MockConfigEntry, freezer
 ) -> None:
-    """Stops the dialling without opening anything."""
+    """Stops the dialing without opening anything."""
     freezer.move_to("2026-08-04T12:00:10Z")
     mock = register_topology(aioclient_mock, calls=[call_payload(call_id=CALL_ID)])
     mock.get(V3_CALLS, json={"data": [v3_call()]})
