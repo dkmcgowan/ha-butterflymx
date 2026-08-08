@@ -20,6 +20,7 @@ from .conftest import (
     BUILDING_ID,
     TENANT_ID,
     access_log_payload,
+    register_topology,
 )
 
 RELEASE_ENTITY = "event.unit_4b_door_opened"
@@ -95,17 +96,17 @@ async def test_a_door_opening_fires_an_event(
 
 
 async def test_startup_does_not_announce_old_openings(
-    hass: HomeAssistant, mock_topology, config_entry: MockConfigEntry
+    hass: HomeAssistant, aioclient_mock, config_entry: MockConfigEntry
 ) -> None:
     """A door opened before Home Assistant started is history, not news.
 
     The access log already holds an entry when setup runs, and the first poll
     must record it as seen rather than announce it.
     """
-    mock_topology.get(
-        f"{API_URL}/v4/buildings/{BUILDING_ID}/access_logs",
-        json={"data": [access_log_payload()], "page_info": {"next_page": None}},
-    )
+    # Seeded through the helper, not by re-registering the endpoint: the mocker
+    # matches in registration order, so re-registering would return the empty
+    # log and this would pass without ever exercising priming.
+    register_topology(aioclient_mock, access_logs=[access_log_payload()])
 
     events: list = []
     config_entry.add_to_hass(hass)
@@ -114,6 +115,8 @@ async def test_startup_does_not_announce_old_openings(
     await hass.async_block_till_done()
 
     assert events == []
+    # Primed, not ignored: the entry is recorded even though nothing fired.
+    assert hass.states.get(LAST_RELEASE_ENTITY).state == "2026-08-04T12:00:00+00:00"
 
 
 def test_an_access_tool_never_keeps_the_code() -> None:

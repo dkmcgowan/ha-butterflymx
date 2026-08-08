@@ -29,15 +29,13 @@ from custom_components.butterflymx.const import (
 from custom_components.butterflymx.webhook import ButterflyMXWebhookManager
 
 from .conftest import (
-    ACCESS_POINTS_RESPONSE,
     ACCOUNTS_URL,
     API_URL,
     BUILDING_ID,
-    DEVICES_RESPONSE,
     TENANT_ID,
-    TENANTS_RESPONSE,
     call_payload,
     make_token,
+    register_topology,
 )
 
 LOCK_ENTITY = "lock.front_entrance"
@@ -276,17 +274,7 @@ async def test_startup_does_not_replay_old_calls(
     hass: HomeAssistant, aioclient_mock, config_entry: MockConfigEntry
 ) -> None:
     """Calls that arrived while Home Assistant was down do not ring the doorbell."""
-    aioclient_mock.get(f"{API_URL}/v4/tenants", json=TENANTS_RESPONSE)
-    aioclient_mock.get(f"{API_URL}/v4/access_points", json=ACCESS_POINTS_RESPONSE)
-    aioclient_mock.get(f"{API_URL}/v4/devices", json=DEVICES_RESPONSE)
-    aioclient_mock.get(
-        f"{API_URL}/v4/buildings/{BUILDING_ID}/calls",
-        json={"data": [call_payload()], "page_info": {"next_page": None}},
-    )
-    aioclient_mock.get(
-        f"{API_URL}/v4/buildings/{BUILDING_ID}/access_logs",
-        json={"data": [], "page_info": {"next_page": None}},
-    )
+    register_topology(aioclient_mock, calls=[call_payload()])
 
     events: list = []
     hass.bus.async_listen(EVENT_CALL, events.append)

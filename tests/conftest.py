@@ -128,16 +128,6 @@ ACCESS_TOOLS_RESPONSE: dict[str, Any] = {
     "page_info": {"current_page": 1, "total_pages": 1, "next_page": None},
 }
 
-EMPTY_CALLS_RESPONSE: dict[str, Any] = {
-    "data": [],
-    "page_info": {"current_page": 1, "total_pages": 1, "next_page": None},
-}
-
-EMPTY_ACCESS_LOGS_RESPONSE: dict[str, Any] = {
-    "data": [],
-    "page_info": {"current_page": 1, "total_pages": 1, "next_page": None},
-}
-
 KEYCHAIN_ID = 44138578
 VIRTUAL_KEY_ID = 45948600
 
@@ -253,23 +243,30 @@ def config_entry() -> MockConfigEntry:
 def register_topology(
     mock,
     *,
+    calls: list[dict[str, Any]] | None = None,
+    access_logs: list[dict[str, Any]] | None = None,
     keychains: list[dict[str, Any]] | None = None,
     virtual_keys: list[dict[str, Any]] | None = None,
 ):
-    """Mock everything setup reads, with no calls, releases or passes by default.
+    """Mock everything setup reads, with nothing on the account by default.
 
-    Takes the pass payloads as arguments rather than letting tests re-register
-    the endpoint afterwards: the mocker matches in registration order, so a
-    later registration for the same URL is silently ignored.
+    Every endpoint setup touches is registered here, and what each returns is
+    an argument. That is not tidiness: the mocker matches in registration
+    order, so a test that registers a URL this has already claimed silently
+    gets this one's answer instead. A test that seeds the world before setup
+    has to do it through here.
+
+    Leaving an endpoint out is worse still. An unmatched request raises out of
+    the coordinator rather than being caught as a ButterflyMX error, and setup
+    fails with nothing pointing at the missing mock.
     """
     mock.get(f"{API_URL}/v4/tenants", json=TENANTS_RESPONSE)
     mock.get(f"{API_URL}/v4/access_points", json=ACCESS_POINTS_RESPONSE)
     mock.get(f"{API_URL}/v4/devices", json=DEVICES_RESPONSE)
     mock.get(f"{API_URL}/v4/access_tools", json=ACCESS_TOOLS_RESPONSE)
-    mock.get(f"{API_URL}/v4/buildings/{BUILDING_ID}/calls", json=EMPTY_CALLS_RESPONSE)
+    mock.get(f"{API_URL}/v4/buildings/{BUILDING_ID}/calls", json=paged(calls))
     mock.get(
-        f"{API_URL}/v4/buildings/{BUILDING_ID}/access_logs",
-        json=EMPTY_ACCESS_LOGS_RESPONSE,
+        f"{API_URL}/v4/buildings/{BUILDING_ID}/access_logs", json=paged(access_logs)
     )
     mock.get(f"{API_URL}/v4/keychains", json=paged(keychains))
     mock.get(f"{API_URL}/v4/virtual_keys", json=paged(virtual_keys))
