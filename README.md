@@ -127,43 +127,47 @@ automations and history survive that.
 
 ## Things to do with it
 
+The examples with `alias:` at the top are complete automations. To use one, add
+a new automation, open the three-dot menu, choose **Edit in YAML**, and replace
+everything in the box. The shorter examples that start with `actions:` are just
+the action, meant to be dropped into an automation or script you already have.
+
 **See who is at the door and let them in from the notification:**
 
 ```yaml
-automation:
-  - alias: "Someone is at the door"
-    mode: restart
-    variables:
-      # The door the "Let them in" button opens.
-      door: lock.<door>
-    triggers:
-      - trigger: state
-        entity_id: event.<unit>_doorbell
-    actions:
-      - action: notify.mobile_app_my_phone
-        data:
-          title: "Someone is at {{ trigger.to_state.attributes.device_name }}"
-          message: "Tap to see who it is"
-          data:
-            image: "{{ trigger.to_state.attributes.image_url }}"
-            actions:
-              - action: BMX_OPEN
-                title: "Let them in"
-              - action: BMX_IGNORE
-                title: "Ignore"
-      - wait_for_trigger:
-          - trigger: event
-            event_type: mobile_app_notification_action
-            event_data:
-              action: BMX_OPEN
-        timeout: "00:02:00"
-        continue_on_timeout: true
-      # Nothing tapped, or "Ignore" tapped: stop here without opening.
-      - condition: template
-        value_template: "{{ wait.trigger is not none }}"
-      - action: lock.open
-        target:
-          entity_id: "{{ door }}"
+alias: "Someone is at the door"
+mode: restart
+variables:
+  # The door the "Let them in" button opens.
+  door: lock.<door>
+triggers:
+  - trigger: state
+    entity_id: event.<unit>_doorbell
+actions:
+  - action: notify.mobile_app_my_phone
+    data:
+      title: "Someone is at {{ trigger.to_state.attributes.device_name }}"
+      message: "Tap to see who it is"
+      data:
+        image: "{{ trigger.to_state.attributes.image_url }}"
+        actions:
+          - action: BMX_OPEN
+            title: "Let them in"
+          - action: BMX_IGNORE
+            title: "Ignore"
+  - wait_for_trigger:
+      - trigger: event
+        event_type: mobile_app_notification_action
+        event_data:
+          action: BMX_OPEN
+    timeout: "00:02:00"
+    continue_on_timeout: true
+  # Nothing tapped, or "Ignore" tapped: stop here without opening.
+  - condition: template
+    value_template: "{{ wait.trigger is not none }}"
+  - action: lock.open
+    target:
+      entity_id: "{{ door }}"
 ```
 
 Change `door:` at the top to whichever lock you want the button to open.
@@ -301,23 +305,22 @@ actions:
 **Tidy up expired passes automatically:**
 
 ```yaml
-automation:
-  - alias: "Remove finished ButterflyMX passes"
-    triggers:
-      - trigger: time
-        at: "03:00:00"
-    actions:
-      - repeat:
-          for_each: >
-            {{ state_attr('sensor.<unit>_passes', 'passes')
-               | selectattr('ends_at', 'lt', now().isoformat())
-               | map(attribute='pass_id') | list }}
-          sequence:
-            - action: butterflymx.revoke_pass
-              target:
-                entity_id: sensor.<unit>_passes
-              data:
-                pass_id: "{{ repeat.item }}"
+alias: "Remove finished ButterflyMX passes"
+triggers:
+  - trigger: time
+    at: "03:00:00"
+actions:
+  - repeat:
+      for_each: >
+        {{ state_attr('sensor.<unit>_passes', 'passes')
+           | selectattr('ends_at', 'lt', now().isoformat())
+           | map(attribute='pass_id') | list }}
+      sequence:
+        - action: butterflymx.revoke_pass
+          target:
+            entity_id: sensor.<unit>_passes
+          data:
+            pass_id: "{{ repeat.item }}"
 ```
 
 ### Sending a code to someone
@@ -358,35 +361,34 @@ it only works once you have renamed the two doorbells to tell them apart. See
 the second point below.
 
 ```yaml
-automation:
-  - alias: "Doorbell goes to the right phone"
-    triggers:
-      - trigger: state
-        entity_id: event.davids_doorbell
-        id: david
-      - trigger: state
-        entity_id: event.sarahs_doorbell
-        id: sarah
-    actions:
-      - choose:
-          - conditions:
-              - condition: trigger
-                id: david
-            sequence:
-              - action: notify.mobile_app_davids_phone
-                data:
-                  message: "Someone is at the door"
-                  data:
-                    image: "{{ trigger.to_state.attributes.image_url }}"
-          - conditions:
-              - condition: trigger
-                id: sarah
-            sequence:
-              - action: notify.mobile_app_sarahs_phone
-                data:
-                  message: "Someone is at the door"
-                  data:
-                    image: "{{ trigger.to_state.attributes.image_url }}"
+alias: "Doorbell goes to the right phone"
+triggers:
+  - trigger: state
+    entity_id: event.davids_doorbell
+    id: david
+  - trigger: state
+    entity_id: event.sarahs_doorbell
+    id: sarah
+actions:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: david
+        sequence:
+          - action: notify.mobile_app_davids_phone
+            data:
+              message: "Someone is at the door"
+              data:
+                image: "{{ trigger.to_state.attributes.image_url }}"
+      - conditions:
+          - condition: trigger
+            id: sarah
+        sequence:
+          - action: notify.mobile_app_sarahs_phone
+            data:
+              message: "Someone is at the door"
+              data:
+                image: "{{ trigger.to_state.attributes.image_url }}"
 ```
 
 Three things to expect when you set up the second one:
