@@ -146,6 +146,9 @@ actions:
       message: "Someone is at {{ trigger.to_state.attributes.device_name }}"
       data:
         tag: butterflymx
+        channel: ButterflyMX Visitor
+        importance: high
+        visibility: public
         ttl: 0
         priority: high
         image: "{{ trigger.to_state.attributes.image_url }}"
@@ -203,6 +206,8 @@ actions:
           message: "Missed visitor at {{ trigger.to_state.attributes.device_name }}"
           data:
             tag: butterflymx
+            channel: ButterflyMX Missed
+            importance: low
             image: "{{ trigger.to_state.attributes.image_url }}"
 mode: restart
 ```
@@ -222,12 +227,30 @@ and a message, so everything below it is rejected. Find the exact name under
 
 `tag` is what makes the notification update in place rather than pile up: the
 same tag on the missed notice replaces the ringing one, and `clear_notification`
-removes it outright. `ttl: 0` with `priority: high` tell Android to deliver a
-message immediately instead of batching it, which matters for the ring and for
-the two clears as well, since a dozing phone would otherwise leave the
-notification up after the door has already been opened. The missed notice is
-the one place they are deliberately left out, so it arrives quietly. Both are
-Android options; on iOS drop them and use a `push` block for the same urgency.
+removes it outright.
+
+`ttl: 0` with `priority: high` tell Android to deliver a message immediately
+instead of batching it. That matters for the ring and for the two clears as
+well, since a dozing phone would otherwise leave the notification up after the
+door has already been opened.
+
+**Delivery speed and pop-up behavior are different things**, which is easy to
+lose an evening to. `priority` only decides how fast the message arrives. What
+makes it appear over whatever you are doing is the *channel's* importance, and
+the companion app's default "General" channel is created quietly. So the ring
+gets a channel of its own at `importance: high`, and `visibility: public` so the
+photo shows on the lock screen. The missed notice gets a second channel at
+`importance: low`, which is the same split ButterflyMX uses: their app puts
+missed calls on a separate quiet channel so they do not interrupt you twice.
+
+**A channel keeps whatever importance it was created with.** Home Assistant can
+lower it later but never raise it, so if the ring still does not pop, that
+channel already exists from an earlier notification. Either use a different
+name, or fix it on the phone: Android Settings, Apps, Home Assistant,
+Notifications, pick the channel, turn on "Pop on screen".
+
+All of these are Android options. On iOS drop them and use a `push` block for
+the same urgency.
 
 **Why 40 seconds?** That is how long the ButterflyMX app rings before giving up,
 so the notification stops offering to unlock at the same moment their app stops
