@@ -419,7 +419,7 @@ already cover both of you, and one is simpler than two.
 | --- | --- | --- |
 | Webhook push | Off | **Turn this on if you can.** ButterflyMX tells Home Assistant the moment someone calls, instead of waiting for the next check. See below. |
 | Call polling interval | 10 seconds | How often to check for calls when push is not carrying them. Lower is faster and makes more requests. |
-| Show door as unlocked for | 5 seconds | How long the lock shows as unlocked afterwards. Cosmetic; it does not change how long the door stays open. |
+| Show door as unlocked for, when ButterflyMX does not say | 5 seconds | Only used for doors whose real setting could not be read. ButterflyMX configures how long each door stays open, so normally that number is used instead and this is ignored. Either way it is cosmetic, and changing it does not change how long the door stays open. |
 
 ### Webhook push
 

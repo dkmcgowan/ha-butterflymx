@@ -7,6 +7,11 @@ successful release, and returns to ``locked`` once the strike has re-engaged.
 ``assumed_state`` is set so the UI shows discrete open/close controls rather
 than a toggle that pretends to know the truth.
 
+How long "briefly" is comes from ButterflyMX rather than from a setting: each
+access point carries its own ``open_duration``, and it varies a lot between
+doors on one panel.  The configured relock delay is only the fallback for a
+door whose real duration could not be read.
+
 ``is_open`` is deliberately never reported.  Releasing the strike makes a door
 openable, but whether anyone actually pushed it is not something this API can
 tell us, so claiming it would be a guess dressed up as a reading.  Unlock and
@@ -35,7 +40,7 @@ from .coordinator import (
 )
 from .entity import ButterflyMXTopologyEntity, door_device_info
 from .exceptions import ButterflyMXError
-from .models import ButterflyMXTopology
+from .models import AccessPointDetail, ButterflyMXTopology
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -100,13 +105,41 @@ class ButterflyMXLock(ButterflyMXTopologyEntity, LockEntity):
         self._last_release: float = 0.0
 
     @property
+    def _detail(self) -> AccessPointDetail | None:
+        """How ButterflyMX says this particular door is configured."""
+        topology: ButterflyMXTopology | None = self.coordinator.data
+        if topology is None:
+            return None
+        return topology.access_point_detail(self._target.access_point_id)
+
+    @property
+    def _open_seconds(self) -> int:
+        """How long this door really stays open.
+
+        ButterflyMX configures this per door, and the spread is wide: one panel
+        was measured at 4, 9 and 14 seconds across its three access points.  The
+        configured relock delay is the fallback for doors it could not be read
+        for, not a default to prefer.
+        """
+        detail = self._detail
+        if detail is not None and detail.open_duration:
+            return detail.open_duration
+        return self._relock_delay
+
+    @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Expose the ButterflyMX identifiers behind this door."""
+        """Expose the ButterflyMX identifiers and settings behind this door."""
+        detail = self._detail
         return {
             "building_id": self._target.building_id,
             "tenant_id": self._target.tenant_id,
             "access_point_id": self._target.access_point_id,
             "device_id": self._target.device_id,
+            # Worth surfacing rather than only acting on: it explains why one
+            # door in a building behaves differently from the next, and it is
+            # what an automation needs to know to time a second release.
+            "open_duration": self._open_seconds,
+            "online": detail.online if detail else None,
         }
 
     async def async_lock(self, **kwargs: Any) -> None:
@@ -205,11 +238,12 @@ class ButterflyMXLock(ButterflyMXTopologyEntity, LockEntity):
     def _schedule_relock(self) -> None:
         """Return the entity to ``locked`` after the strike times out."""
         self._cancel_relock()
+        seconds = self._open_seconds
 
         async def _relock() -> None:
             # A cancelled timer means a newer release replaced this one, so let
             # the cancellation propagate rather than reporting the door locked.
-            await asyncio.sleep(self._relock_delay)
+            await asyncio.sleep(seconds)
             self._set_locked()
 
         self._relock_task = self.hass.async_create_task(

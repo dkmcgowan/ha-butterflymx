@@ -48,6 +48,7 @@ from .exceptions import (
 from .models import (
     AccessLogEntry,
     AccessPoint,
+    AccessPointDetail,
     AccessTool,
     ButterflyMXTopology,
     Call,
@@ -233,6 +234,23 @@ class ButterflyMXTopologyCoordinator(DataUpdateCoordinator[ButterflyMXTopology])
             except ButterflyMXError as err:
                 _LOGGER.debug("Could not list access tools: %s", err)
 
+            # How long each door stays open.  Also not worth failing over: the
+            # locks work either way, they just fall back to the configured
+            # relock delay and report themselves locked at the wrong moment.
+            access_point_details: dict[int, AccessPointDetail] = {}
+            try:
+                access_point_details = (
+                    await self.client.async_get_access_point_details()
+                )
+            except ButterflyMXAuthError:
+                raise
+            except ButterflyMXError as err:
+                _LOGGER.debug(
+                    "Could not read how long doors stay open: %s. Locks will use "
+                    "the configured relock delay instead",
+                    err,
+                )
+
             if unreachable and len(unreachable) == len(building_ids):
                 # Nothing came back at all, so this is a general failure rather
                 # than one bad building.  Fail the refresh and keep the previous
@@ -253,6 +271,7 @@ class ButterflyMXTopologyCoordinator(DataUpdateCoordinator[ButterflyMXTopology])
             access_points=access_points,
             devices=devices,
             access_tools=access_tools,
+            access_point_details=access_point_details,
         )
 
 

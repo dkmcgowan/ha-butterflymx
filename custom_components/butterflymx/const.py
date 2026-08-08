@@ -84,6 +84,19 @@ API_VERSION_PATH: Final = "/v4"
 V3_PATH: Final = "/v3"
 V3_CONTENT_TYPE: Final = "application/vnd.api+json"
 
+# How long a door stays open after a release is configured per access point, and
+# only the GraphQL API will say.  v4 has no field for it anywhere: a release
+# takes no duration and returns none, and the access log records only that the
+# door opened.  Without the real number the lock entity has to guess when to
+# report itself locked again, and a door configured for 4 seconds and one
+# configured for 14 look identical.
+#
+# Same host and same OAuth token as everything else here.  One read-only query
+# on the hourly topology refresh, and the account works without it: a failure
+# leaves every lock on its configured fallback rather than breaking setup.
+GRAPHQL_PATH: Final = "/denizen/v1"
+GRAPHQL_ENDPOINT: Final = "/graphql"
+
 # The commands the official app sends when you act on a call from its
 # notification: open_door when you let someone in, call_ended when you decline.
 PANEL_COMMAND_OPEN_DOOR: Final = "open_door"
@@ -156,6 +169,8 @@ CALL_LOOKBACK: Final = 300  # seconds
 # announced are filtered out by ID.
 CALL_POLL_OVERLAP: Final = 30  # seconds
 
+# Only a fallback, used for doors whose real duration could not be read.  When
+# ButterflyMX reports one, that wins: see GRAPHQL_PATH above.
 DEFAULT_RELOCK_DELAY: Final = 5  # seconds
 MIN_RELOCK_DELAY: Final = 1
 MAX_RELOCK_DELAY: Final = 300

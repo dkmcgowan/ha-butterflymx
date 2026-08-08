@@ -73,6 +73,20 @@ TENANTS_RESPONSE = {
     "page_info": {"current_page": 1, "total_pages": 1, "next_page": None},
 }
 
+# How long the door stays open, which only GraphQL reports.  ``legacyId`` is a
+# string there and the same integer v4 uses, which is what joins the two.
+ACCESS_POINT_OPEN_DURATION = 12
+
+ACCESS_POINT_NODES = [
+    {
+        "legacyId": str(ACCESS_POINT_ID),
+        "name": "Front Entrance",
+        "openDuration": ACCESS_POINT_OPEN_DURATION,
+        "online": True,
+        "inOpenHours": False,
+    }
+]
+
 ACCESS_POINTS_RESPONSE = {
     "data": [
         {
@@ -238,6 +252,29 @@ def config_entry() -> MockConfigEntry:
     )
 
 
+def graphql_access_points(
+    nodes: list[dict[str, Any]] | None = None, *, has_next_page: bool = False
+) -> dict[str, Any]:
+    """Wrap access point nodes the way the GraphQL API returns them."""
+    return {
+        "data": {
+            "tenants": {
+                "pageInfo": {"hasNextPage": False},
+                "nodes": [
+                    {
+                        "accessPoints": {
+                            "pageInfo": {"hasNextPage": has_next_page},
+                            "nodes": (
+                                ACCESS_POINT_NODES if nodes is None else nodes
+                            ),
+                        }
+                    }
+                ],
+            }
+        }
+    }
+
+
 def register_topology(
     mock,
     *,
@@ -245,6 +282,7 @@ def register_topology(
     access_logs: list[dict[str, Any]] | None = None,
     keychains: list[dict[str, Any]] | None = None,
     virtual_keys: list[dict[str, Any]] | None = None,
+    access_point_details: dict[str, Any] | None = None,
 ):
     """Mock everything setup reads, with nothing on the account by default.
 
@@ -268,6 +306,14 @@ def register_topology(
     )
     mock.get(f"{API_URL}/v4/keychains", json=paged(keychains))
     mock.get(f"{API_URL}/v4/virtual_keys", json=paged(virtual_keys))
+    mock.post(
+        f"{API_URL}/denizen/v1/graphql",
+        json=(
+            graphql_access_points()
+            if access_point_details is None
+            else access_point_details
+        ),
+    )
     return mock
 
 

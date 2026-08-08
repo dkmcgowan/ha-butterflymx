@@ -189,6 +189,53 @@ class AccessPoint:
 
 
 @dataclass(frozen=True, slots=True)
+class AccessPointDetail:
+    """How a door is configured, which the REST API never says.
+
+    ``open_duration`` is the seconds the strike stays released, and it varies
+    per door: one building measured 4, 9 and 14 seconds across three access
+    points on a single panel.  Without it the lock entity has to guess when the
+    door has re-engaged, and the guess is wrong by a factor of three at the
+    extremes.
+
+    Keyed by :attr:`access_point_id`, which GraphQL calls ``legacyId`` and is
+    the same integer v4 uses, so the two views join cleanly with no name
+    matching.
+    """
+
+    access_point_id: int
+    name: str | None = None
+    open_duration: int | None = None
+    online: bool | None = None
+    in_open_hours: bool | None = None
+
+    @classmethod
+    def from_graphql(cls, data: dict[str, Any]) -> AccessPointDetail | None:
+        """Build an AccessPointDetail from a GraphQL ``AccessPoint`` node."""
+        access_point_id = _int_or_none(
+            data.get("legacyId"), field_name="access_point.legacyId"
+        )
+        if access_point_id is None:
+            _LOGGER.debug(
+                "Ignoring a GraphQL access point with no legacyId to join on: %s",
+                sorted(data),
+            )
+            return None
+        duration = _int_or_none(
+            data.get("openDuration"), field_name="access_point.openDuration"
+        )
+        return cls(
+            access_point_id=access_point_id,
+            name=data.get("name"),
+            # Zero would mean a door that never opens, which is a value we do
+            # not want to hand to a relock timer.
+            open_duration=duration if duration and duration > 0 else None,
+            online=data.get("online"),
+            in_open_hours=data.get("inOpenHours"),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class Device:
     """A hardware device installed in a building."""
 
@@ -682,6 +729,18 @@ class ButterflyMXTopology:
     access_points: list[AccessPoint] = field(default_factory=list)
     devices: list[Device] = field(default_factory=list)
     access_tools: list[AccessTool] = field(default_factory=list)
+    #: Per-door configuration, keyed by access point ID.  Empty when the
+    #: GraphQL read failed, which is not fatal: locks fall back to the
+    #: configured relock delay.
+    access_point_details: dict[int, AccessPointDetail] = field(default_factory=dict)
+
+    def access_point_detail(
+        self, access_point_id: int | None
+    ) -> AccessPointDetail | None:
+        """Look up how a door is configured, if ButterflyMX told us."""
+        if access_point_id is None:
+            return None
+        return self.access_point_details.get(access_point_id)
 
     def access_tool(self, tool_id: int | None) -> AccessTool | None:
         """Look up the PIN or fob an access log entry refers to."""
