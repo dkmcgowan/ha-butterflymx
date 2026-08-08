@@ -73,6 +73,23 @@ async def test_setup_creates_entities(
     assert lock.attributes["access_point_id"] == 1001
 
 
+async def test_the_doorbell_declares_the_ring_event_type(
+    hass: HomeAssistant, mock_topology, config_entry: MockConfigEntry
+) -> None:
+    """Home Assistant requires "ring" on anything with the doorbell device class.
+
+    Without it, setup logs a warning naming this repository and the entity stops
+    working in Home Assistant 2027.4. Found by installing it, not by any test,
+    which is why there is one now.
+    """
+    await _setup(hass, config_entry)
+
+    doorbell = hass.states.get(DOORBELL_ENTITY)
+    assert doorbell is not None
+    assert doorbell.attributes["device_class"] == "doorbell"
+    assert "ring" in doorbell.attributes["event_types"]
+
+
 async def test_doors_and_the_unit_hang_off_the_building(
     hass: HomeAssistant, mock_topology, config_entry: MockConfigEntry
 ) -> None:
@@ -241,7 +258,7 @@ async def test_new_call_fires_doorbell_and_updates_entities(
     assert events[0].data["unit_label"] == "4B"
 
     doorbell = hass.states.get(DOORBELL_ENTITY)
-    assert doorbell.attributes["event_type"] == "call"
+    assert doorbell.attributes["event_type"] == "ring"
     assert doorbell.attributes["device_name"] == "Lobby Panel"
 
     assert hass.states.get(LAST_CALL_ENTITY).state == "2026-08-04T12:00:00+00:00"

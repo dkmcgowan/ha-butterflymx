@@ -53,7 +53,7 @@
         "state_attributes": {
           "event_type": {
             "state": {
-              "call": "Call"
+              "ring": "Ring"
             }
           }
         }

@@ -154,7 +154,16 @@ DIRECT_LOCK_DEVICE_TYPES: Final[frozenset[str]] = frozenset(
 # --- Events -------------------------------------------------------------------
 
 EVENT_CALL: Final = "butterflymx_call"
-EVENT_TYPE_CALL: Final = "call"
+
+# The event type a doorbell entity fires.  Home Assistant standardizes this as
+# "ring" for anything with the doorbell device class, and warns on startup if it
+# is missing.  Spelled out rather than imported from
+# homeassistant.components.event.DoorbellEventType, which does not exist in the
+# oldest Home Assistant this supports.
+#
+# Only the type string is "ring".  The payload still describes a ButterflyMX
+# call, with the call ID, the device that placed it and the snapshot URL.
+EVENT_TYPE_RING: Final = "ring"
 
 EVENT_DOOR_RELEASE: Final = "butterflymx_door_release"
 EVENT_TYPE_DOOR_RELEASE: Final = "door_release"

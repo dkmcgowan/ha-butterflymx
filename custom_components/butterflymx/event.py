@@ -14,7 +14,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import ButterflyMXConfigEntry
-from .const import DOMAIN, EVENT_TYPE_CALL, EVENT_TYPE_DOOR_RELEASE
+from .const import DOMAIN, EVENT_TYPE_DOOR_RELEASE, EVENT_TYPE_RING
 from .coordinator import ButterflyMXAccessLogCoordinator, ButterflyMXCallCoordinator
 from .entity import ButterflyMXAccessLogEntity, ButterflyMXCallEntity
 from .models import AccessLogEntry, Call, Tenant
@@ -56,7 +56,7 @@ class ButterflyMXDoorbellEvent(ButterflyMXCallEntity, EventEntity):
 
     _attr_device_class = EventDeviceClass.DOORBELL
     _attr_translation_key = "doorbell"
-    _attr_event_types: ClassVar[list[str]] = [EVENT_TYPE_CALL]
+    _attr_event_types: ClassVar[list[str]] = [EVENT_TYPE_RING]
 
     def __init__(
         self, coordinator: ButterflyMXCallCoordinator, tenant: Tenant
@@ -77,7 +77,7 @@ class ButterflyMXDoorbellEvent(ButterflyMXCallEntity, EventEntity):
         """Fire the doorbell for calls addressed to this tenancy."""
         if tenant.id != self._tenant.id:
             return
-        self._trigger_event(EVENT_TYPE_CALL, call.as_event_data())
+        self._trigger_event(EVENT_TYPE_RING, call.as_event_data())
         self.async_write_ha_state()
 
     @callback
