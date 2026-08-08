@@ -17,8 +17,8 @@ is let in after dark.
 > Parts of it were written with the help of Claude Code. Every file has since
 > been read and reviewed line by line, and every request it makes has been run
 > against a real ButterflyMX account: signing in, listing doors, reading the
-> call log, receiving a pushed call, opening a door, and issuing and revoking
-> visitor and delivery passes.
+> call log, receiving a pushed call, opening a door, telling the intercom panel
+> the call was handled, and issuing and revoking visitor and delivery passes.
 
 ## What you get
 
@@ -381,8 +381,8 @@ Three things to expect:
   Rename them before writing automations.
 - **Passes are per login too.** A code your partner made appears under theirs.
 
-Door releases need none of this care: whoever's `event.*_door_opened` fires is
-whoever opened the door.
+`event.*_door_opened` needs none of this care. Each setup only ever reports its
+own login's door releases, so whichever one fires is the person who opened it.
 
 ### Unlocking as whoever tapped
 
@@ -399,7 +399,7 @@ actions:
       entity_id: >-
         {{ 'lock.front_and_inner_door_2'
            if wait.trigger.event.context.user_id
-              == state_attr('person.sarah_mcgowan', 'user_id')
+              == state_attr('person.sarah', 'user_id')
            else 'lock.front_and_inner_door' }}
 ```
 
@@ -410,10 +410,6 @@ whose name ButterflyMX records.
 
 Before any of this, check you need it. If you share a unit, one entry may
 already cover both of you, and one is simpler than two.
-
-Nobody has run two entries side by side yet. The scoping above was checked
-against a real account; the two-entry setup itself has not been. Please open an
-issue if it misbehaves.
 
 ## Settings
 
