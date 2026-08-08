@@ -410,7 +410,7 @@ one resident for good, so the entity that fired tells you who the call was for.
 There is no ID to inspect.
 
 How exact that is depends on your building's directory. If it lists residents
-separately, as in "David Unit 4B" and "Blair Unit 4B", a visitor picks a name
+separately, as in "David Unit 4B" and "Sarah Unit 4B", a visitor picks a name
 and only that person's doorbell fires. If it lists the unit once instead, a
 visitor rings the unit and both doorbells fire for the same person at the door,
 which means two notifications unless you handle it.
