@@ -15,6 +15,9 @@ It then looks at the endpoints planned for later releases, so their real field
 values are known before any entity code is written against them: access logs,
 access point schedules, visitor and delivery passes, and the resident PIN.
 
+The last step is the one thing v4 cannot answer: how long a door stays open
+once released.  That lives on the panel, which only v3 will hand over.
+
 Every request is a GET.  Nothing here creates, modifies or deletes anything, and
 no door is ever released.
 
@@ -93,6 +96,10 @@ REDACT_KEYS = {
     "client_id",
     "client_secret",
     "serial_number",
+    # A panel's beacon UUID identifies the hardware at someone's front door as
+    # squarely as its serial number does.  The terminal prints it; the file
+    # meant for pasting into an issue does not.
+    "guid",
     # Who the resident is.
     "email",
     "first_name",
@@ -125,11 +132,12 @@ def _request(
     data: dict[str, str] | None = None,
     token: str | None = None,
     raw: bool = False,
+    accept: str = "application/json",
 ) -> tuple[int, Any]:
     """Perform a request and return ``(status, body)`` without raising on 4xx."""
     body = urllib.parse.urlencode(data).encode() if data else None
     request = urllib.request.Request(url, data=body, method=method)
-    request.add_header("Accept", "application/json")
+    request.add_header("Accept", accept)
     if token:
         request.add_header("Authorization", f"Bearer {token}")
 
@@ -158,6 +166,24 @@ def _api_get(api_url: str, path: str, token: str, **params: Any) -> tuple[int, A
     query = urllib.parse.urlencode(params) if params else ""
     url = f"{api_url}/v4{path}" + (f"?{query}" if query else "")
     return _request("GET", url, token=token)
+
+
+def _v3_get(
+    api_url: str, path: str, token: str, *, mobile: bool = False, **params: Any
+) -> tuple[int, Any]:
+    """GET a v3 endpoint.
+
+    v3 speaks JSON:API rather than the plain JSON v4 returns, so it wants its
+    own Accept header and its own base path.  Same host and same token.
+
+    ``mobile`` switches to the ``/mobile/v3`` prefix.  It is not a different
+    API, it is a different serialization of the same records, and some
+    resources are fuller there than under plain ``/v3``.
+    """
+    prefix = "/mobile/v3" if mobile else "/v3"
+    query = urllib.parse.urlencode(params) if params else ""
+    url = f"{api_url}{prefix}{path}" + (f"?{query}" if query else "")
+    return _request("GET", url, token=token, accept="application/vnd.api+json")
 
 
 # --------------------------------------------------------------------------- #
@@ -343,7 +369,7 @@ def probe(api_url: str, token: str) -> tuple[dict[str, Any], list[str]]:
     findings: list[str] = []
 
     # Q1: does scope=self work, and how does it differ from an unscoped list?
-    print("\n[1/9] GET /v4/tenants?scope=self")
+    print("\n[1/10] GET /v4/tenants?scope=self")
     status, scoped = _api_get(api_url, "/tenants", token, scope="self", per=100)
     transcript["tenants_self"] = {"status": status, "body": redact(scoped)}
     scoped_rows = scoped.get("data", []) if isinstance(scoped, dict) else []
@@ -387,7 +413,7 @@ def probe(api_url: str, token: str) -> tuple[dict[str, Any], list[str]]:
     print(f"      buildings: {building_ids}")
 
     # Access points are the primary source of lock entities.
-    print(f"\n[2/9] GET /v4/access_points (building {building_id})")
+    print(f"\n[2/10] GET /v4/access_points (building {building_id})")
     status, points = _api_get(
         api_url, "/access_points", token, per=100, **{"q[building_id_eq]": str(building_id)}
     )
@@ -406,7 +432,7 @@ def probe(api_url: str, token: str) -> tuple[dict[str, Any], list[str]]:
     _report_keys("access_point", point_rows, findings)
 
     # Q2: can a resident enumerate devices?
-    print(f"\n[3/9] GET /v4/devices (building {building_id})")
+    print(f"\n[3/10] GET /v4/devices (building {building_id})")
     status, devices = _api_get(
         api_url, "/devices", token, per=100, **{"q[building_id_eq]": str(building_id)}
     )
@@ -428,7 +454,7 @@ def probe(api_url: str, token: str) -> tuple[dict[str, Any], list[str]]:
     _report_keys("device", device_rows, findings)
 
     # Q4: what a real call looks like.
-    print(f"\n[4/9] GET /v4/buildings/{building_id}/calls")
+    print(f"\n[4/10] GET /v4/buildings/{building_id}/calls")
     status, calls = _api_get(api_url, f"/buildings/{building_id}/calls", token, per=50)
     transcript["calls"] = {"status": status, "body": redact(calls)}
     call_rows = calls.get("data", []) if isinstance(calls, dict) else []
@@ -463,7 +489,7 @@ def probe(api_url: str, token: str) -> tuple[dict[str, Any], list[str]]:
     _report_keys("call", call_rows, findings)
 
     # Q3: do snapshot URLs need credentials?
-    print("\n[5/9] Snapshot URL authentication")
+    print("\n[5/10] Snapshot URL authentication")
     image_url = next(
         (
             row["image_url"]
@@ -521,7 +547,7 @@ def _probe_roadmap(
     entity code against them, the same reason the call-log probe exists.
     """
     # Access logs: who actually came in, how, and with what photo.
-    print(f"\n[6/9] GET /v4/buildings/{building_id}/access_logs")
+    print(f"\n[6/10] GET /v4/buildings/{building_id}/access_logs")
     status, logs = _api_get(api_url, f"/buildings/{building_id}/access_logs", token, per=50)
     transcript["access_logs"] = {"status": status, "body": redact(logs)}
     log_rows = logs.get("data", []) if isinstance(logs, dict) else []
@@ -532,8 +558,15 @@ def _probe_roadmap(
         findings.append("   access log is empty; open a door and re-run to capture a payload")
     else:
         for field in ("entry_method", "release_type", "release_status"):
+            # entry_method is a phrase such as "App call" on some entries and an
+            # object naming what was used, {"access_tool": 123}, on others, so
+            # the raw values cannot go straight into a set.
             values = sorted(
-                {row.get(field) for row in log_rows if isinstance(row, dict)} - {None}
+                {
+                    json.dumps(value, sort_keys=True) if isinstance(value, dict) else str(value)
+                    for row in log_rows
+                    if isinstance(row, dict) and (value := row.get(field)) is not None
+                }
             )
             findings.append(f"OK access_log {field} values: {values}")
         with_image = sum(
@@ -545,7 +578,7 @@ def _probe_roadmap(
     first_point = next((row for row in point_rows if isinstance(row, dict)), None)
     if first_point:
         point_id = first_point.get("id")
-        print(f"\n[7/9] GET /v4/access_points/{point_id}/schedules")
+        print(f"\n[7/10] GET /v4/access_points/{point_id}/schedules")
         status, schedules = _api_get(api_url, f"/access_points/{point_id}/schedules", token)
         transcript["schedules"] = {"status": status, "body": redact(schedules)}
         rows = schedules.get("data", []) if isinstance(schedules, dict) else []
@@ -561,7 +594,7 @@ def _probe_roadmap(
             findings.append(f"OK schedules present, sample: {rows[0]}")
 
     # Virtual keys / visitor and delivery passes.
-    print("\n[8/9] GET /v4/keychains")
+    print("\n[8/10] GET /v4/keychains")
     status, keychains = _api_get(api_url, "/keychains", token, per=50)
     transcript["keychains"] = {"status": status, "body": redact(keychains)}
     key_rows = keychains.get("data", []) if isinstance(keychains, dict) else []
@@ -583,7 +616,7 @@ def _probe_roadmap(
     tenant = next((row for row in tenant_rows if isinstance(row, dict)), None)
     tenant_id = tenant.get("id") if tenant else None
     if tenant_id:
-        print(f"\n[9/9] GET /v4/access_tools (tenant {tenant_id})")
+        print(f"\n[9/10] GET /v4/access_tools (tenant {tenant_id})")
         status, tools = _api_get(
             api_url, "/access_tools", token, per=50, **{"q[tenant_id_eq]": str(tenant_id)}
         )
@@ -602,6 +635,107 @@ def _probe_roadmap(
                 "   PIN codes are redacted in the transcript; check the terminal "
                 "output above only if you need the raw value"
             )
+
+    unit = (tenant or {}).get("unit") or {}
+    _probe_panels(api_url, token, unit.get("id"), transcript, findings)
+
+
+def _probe_panels(
+    api_url: str,
+    token: str,
+    unit_id: Any,
+    transcript: dict[str, Any],
+    findings: list[str],
+) -> None:
+    """Read how long a door actually stays open.
+
+    Nothing in v4 says.  A release request carries no duration and returns none,
+    and the access log only records that the door was released, so the
+    integration's relock delay is a guess.
+
+    The panel knows: it carries one entry per door lock, each with an
+    ``open_duration_in_sec`` and an ``open_delay_in_sec``.  Reaching it takes
+    care.  ``/v3/me/calls?include=panel`` will side-load a panel, but a trimmed
+    one carrying only ``name`` and ``nfc``, and asking for the missing fields
+    with a JSON:API sparse fieldset does not widen it.  The full serialization
+    only comes back from the ``/mobile/v3`` host prefix, which is where the
+    official app reads its own door release history.
+
+    Read-only, same host, same token.  The full panel also describes its own
+    iBeacon, worth printing while we are here: it sits at the door with a
+    transmit power ButterflyMX tuned for proximity.
+    """
+    if not unit_id:
+        findings.append("   no unit on the tenant record, so the panel cannot be read")
+        return
+
+    path = f"/units/{unit_id}/door_releases"
+    print(f"\n[10/10] GET /mobile/v3{path}?include=panel")
+    status, payload = _v3_get(
+        api_url, path, token, include="panel", mobile=True, **{"page[size]": 1}
+    )
+    transcript["v3_panel"] = {"status": status, "body": redact(payload)}
+
+    if status != 200:
+        findings.append(
+            f"!! /mobile/v3{path} returned HTTP {status}; the configured "
+            "door-open duration cannot be read, so the relock delay stays a guess"
+        )
+        print(f"      HTTP {status}")
+        return
+
+    included = payload.get("included") if isinstance(payload, dict) else None
+    panels = [
+        row
+        for row in (included or [])
+        if isinstance(row, dict) and row.get("type") == "panels"
+    ]
+    print(f"      HTTP {status}, {len(panels)} panel(s) side-loaded")
+
+    if not panels:
+        findings.append(
+            "   no panel side-loaded. The include hangs off a door release, so an "
+            "account that has never opened a door has nothing to attach it to: "
+            "buzz the door once and re-run."
+        )
+        return
+
+    print("      first panel, in full:")
+    print(json.dumps(redact(panels[0].get("attributes") or {}), indent=2, sort_keys=True))
+
+    for panel in panels:
+        panel_id = panel.get("id")
+        attributes = panel.get("attributes") or {}
+
+        locks = [lock for lock in (attributes.get("door_locks") or []) if isinstance(lock, dict)]
+        if not locks:
+            findings.append(f"!! panel {panel_id} lists no door_locks")
+        # A duration of zero is an output the panel has but nothing is wired to.
+        live = [lock for lock in locks if lock.get("open_duration_in_sec")]
+        for lock in live:
+            findings.append(
+                f"OK panel {panel_id} {lock.get('name')}: "
+                f"open_duration_in_sec={lock.get('open_duration_in_sec')}, "
+                f"open_delay_in_sec={lock.get('open_delay_in_sec')}"
+            )
+        findings.append(
+            f"   panel {panel_id}: {len(live)} of {len(locks)} lock outputs are in use"
+        )
+
+        beacon = attributes.get("bluetooth_config")
+        if isinstance(beacon, dict):
+            findings.append(
+                f"   panel {panel_id} advertises a beacon: major={beacon.get('major')}, "
+                f"minor={beacon.get('minor')}, txpower={beacon.get('txpower')}"
+            )
+            # Printed rather than written, because the transcript redacts it.
+            print(f"      panel {panel_id} beacon uuid: {beacon.get('guid')}")
+
+    findings.append(
+        "   door locks are named lock1..lock4, after the panel's outputs, and "
+        "nothing ties one to an access point. Durations are readable; which door "
+        "each belongs to is not."
+    )
 
 
 # --------------------------------------------------------------------------- #
