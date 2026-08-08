@@ -25,17 +25,24 @@ is let in after dark.
 Once set up, these appear in Home Assistant automatically. You do not configure
 them by hand.
 
+`<door>` below is the name ButterflyMX already gives that door, and `<unit>` is
+your unit — so a door called "Front Entrance" in an apartment 4B becomes
+`lock.front_entrance` and `event.unit_4b_doorbell`. Yours will read differently.
+
 | Entity | What it is |
 | --- | --- |
-| `lock.front_entrance` | One for every door you can already open in the ButterflyMX app. Press to buzz it open. |
-| `event.unit_4b_doorbell` | Fires the instant a visitor calls your unit. Use it to trigger notifications. |
-| `image.unit_4b_last_call_snapshot` | The photo the intercom took of your most recent visitor. |
-| `sensor.unit_4b_last_call` | When the last call happened, and who or what it came from. |
-| `event.unit_4b_door_opened` | Fires whenever one of your doors is opened, however it happened: a PIN at the keypad, a fob, someone answering the intercom in the app, or Home Assistant. |
-| `sensor.unit_4b_last_door_opened` | When a door was last opened, which one, and how — `PIN`, `Fob`, `App call` or `API`. |
-| `sensor.unit_4b_passes` | How many visitor and delivery codes are currently valid, and what they are for. See [Visitor and delivery passes](#visitor-and-delivery-passes). |
+| `lock.<door>` | One for every door you can already open in the ButterflyMX app. Press to buzz it open. |
+| `event.<unit>_doorbell` | Fires the instant a visitor calls your unit. Use it to trigger notifications. |
+| `image.<unit>_last_call_snapshot` | The photo the intercom took of your most recent visitor. |
+| `sensor.<unit>_last_call` | When the last call happened, and who or what it came from. |
+| `event.<unit>_door_opened` | Fires whenever one of your doors is opened, however it happened: a PIN at the keypad, a fob, someone answering the intercom in the app, or Home Assistant. |
+| `sensor.<unit>_last_door_opened` | When a door was last opened, which one, and how — `PIN`, `Fob`, `App call` or `API`. |
+| `sensor.<unit>_passes` | How many visitor and delivery codes are currently valid, and what they are for. See [Visitor and delivery passes](#visitor-and-delivery-passes). |
 
-Names will match your own building and unit.
+**The examples below use these placeholders too.** Copying one means replacing
+`<door>` and `<unit>` with your own — the quickest way to find them is
+**Settings → Devices & services → ButterflyMX → entities**, or start typing in
+any entity picker.
 
 The door entities only ever cover your own tenancy. ButterflyMX scopes the
 access log to the signed-in resident, so you see your own comings and goings and
@@ -129,10 +136,10 @@ automation:
     mode: restart
     variables:
       # The door the "Let them in" button opens.
-      door: lock.front_entrance
+      door: lock.<door>
     triggers:
       - trigger: state
-        entity_id: event.unit_4b_doorbell
+        entity_id: event.<unit>_doorbell
     actions:
       - action: notify.mobile_app_my_phone
         data:
@@ -181,7 +188,7 @@ Assistant to be reachable from outside.
 actions:
   - action: lock.open
     target:
-      entity_id: lock.front_entrance
+      entity_id: lock.<door>
 ```
 
 Both `lock.open` and `lock.unlock` buzz the door. Add the lock to a dashboard, a
@@ -221,12 +228,12 @@ be asked for rather than sitting in a database.
 actions:
   - action: butterflymx.create_delivery_pass
     target:
-      entity_id: sensor.unit_4b_passes
+      entity_id: sensor.<unit>_passes
     data:
       name: "Amazon - Tuesday"
     response_variable: delivery
   - variables:
-      pass: "{{ delivery['sensor.unit_4b_passes'] }}"
+      pass: "{{ delivery['sensor.<unit>_passes'] }}"
   - action: notify.mobile_app_my_phone
     data:
       title: "Delivery code"
@@ -246,36 +253,36 @@ which is why the example pulls it out into a variable first.
 actions:
   - action: butterflymx.create_visitor_pass
     target:
-      entity_id: sensor.unit_4b_passes
+      entity_id: sensor.<unit>_passes
     data:
       name: "Cleaner"
       starts_at: "2026-08-10 09:00:00"
       ends_at: "2026-08-10 13:00:00"
       doors:
-        - lock.front_entrance
+        - lock.<door>
     response_variable: visitor
 ```
 
 Everything but `name` is optional. Leave the times out and it starts now and
 runs for four hours; leave `doors` out and it opens all of them.
 
-Under `visitor['sensor.unit_4b_passes']` you get `pass_id`, the window, and a
+Under `visitor['sensor.<unit>_passes']` you get `pass_id`, the window, and a
 `keys` list with `pin_code`, `qr_code_url` and `instructions_url` — the last
 being a page you can send someone that explains how to use the code.
 
 ### Seeing and revoking passes
 
-`sensor.unit_4b_passes` counts the passes valid right now. Its `passes`
+`sensor.<unit>_passes` counts the passes valid right now. Its `passes`
 attribute lists them all, expired ones included, with the ID you need to revoke
 one and a `used` flag so you can tell whether a delivery code has been redeemed.
 
 ```yaml
 # Read the codes back, including the PINs.
-# all_passes['sensor.unit_4b_passes'].passes is the list.
+# all_passes['sensor.<unit>_passes'].passes is the list.
 actions:
   - action: butterflymx.list_passes
     target:
-      entity_id: sensor.unit_4b_passes
+      entity_id: sensor.<unit>_passes
     response_variable: all_passes
 ```
 
@@ -287,7 +294,7 @@ code: the response appears right there on the page.
 actions:
   - action: butterflymx.revoke_pass
     target:
-      entity_id: sensor.unit_4b_passes
+      entity_id: sensor.<unit>_passes
     data:
       pass_id: 44138578
 ```
@@ -303,13 +310,13 @@ automation:
     actions:
       - repeat:
           for_each: >
-            {{ state_attr('sensor.unit_4b_passes', 'passes')
+            {{ state_attr('sensor.<unit>_passes', 'passes')
                | selectattr('ends_at', 'lt', now().isoformat())
                | map(attribute='pass_id') | list }}
           sequence:
             - action: butterflymx.revoke_pass
               target:
-                entity_id: sensor.unit_4b_passes
+                entity_id: sensor.<unit>_passes
               data:
                 pass_id: "{{ repeat.item }}"
 ```
@@ -347,6 +354,10 @@ and only that person's doorbell fires. If it lists the unit once instead, a
 visitor rings the unit and both doorbells fire for the same person at the door,
 which means two notifications unless you handle it.
 
+This example uses real entity IDs rather than the placeholders above, because
+it only works once you have renamed the two doorbells to tell them apart — see
+the second point below.
+
 ```yaml
 automation:
   - alias: "Doorbell goes to the right phone"
@@ -382,7 +393,7 @@ automation:
 Three things to expect when you set up the second one:
 
 - **Each login gets its own copy of everything, doors included.** You will have
-  two `lock.front_entrance`-ish entities for one physical door. That is
+  two lock entities for one physical door, the second suffixed `_2`. That is
   deliberate, not a bug: a door release is performed *as* a resident, and the
   ButterflyMX access log records who opened it. Opening the door from your
   lock is logged as you, and from your partner's is logged as them.
