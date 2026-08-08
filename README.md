@@ -52,23 +52,15 @@ each have your own ButterflyMX login, see
 
 ## Before you start
 
-You need two things:
-
 1. **A ButterflyMX account** that is a resident of the building, the same login
    you use in their app. The integration only ever acts as you, and can only
    open doors you can already open.
 2. **Home Assistant 2025.3 or newer.**
-
-**And possibly a third: a ButterflyMX client ID.** Whether you need one depends
-on this copy of the integration. If it ships with a client ID, setup just asks
-you to sign in and you can skip the rest of this section. If it does not, setup
-asks you for one, and you have to request it from ButterflyMX's developer
-programme at <https://apidocs.butterflymx.com/docs/getting-started>.
-
-Either way you sign in with your own account and the integration only ever holds
-your own access. A client ID is not a password and is not treated as one: it
-identifies the application, not you, and ButterflyMX issues it as a public
-client, so there is no secret to go with it.
+3. **A ButterflyMX client ID**, but only if this copy does not ship one. Setup
+   asks if it needs it; get one from
+   [their developer programme](https://apidocs.butterflymx.com/docs/getting-started).
+   It identifies the application rather than you, and is a public client, so
+   there is no secret to go with it.
 
 ## Install
 
@@ -88,42 +80,16 @@ Copy the `custom_components/butterflymx` folder into your Home Assistant
 
 ## Set it up
 
-Two short steps, or three if you are supplying your own client ID.
-
 1. **Enter your client ID**, if you are asked for one. Leave the redirect URI
-   alone unless ButterflyMX registered a custom one for you. If setup goes
-   straight to signing in, this copy already has a client ID and there is
-   nothing to enter.
+   alone.
+2. **Sign in.** Home Assistant shows a link; open it and approve access on
+   ButterflyMX's own site, so your password never reaches Home Assistant.
+3. **Paste the code back.** ButterflyMX shows a short code rather than
+   redirecting, which is why this step exists. If you land on a web address
+   instead, paste the whole thing and the code is picked out of it.
 
-2. **Sign in to ButterflyMX.** Home Assistant shows you a link. Open it, sign in
-   with your normal ButterflyMX account, and approve access. This happens on
-   ButterflyMX's own site, so your password is never typed into Home Assistant.
-
-3. **Paste the code back.** ButterflyMX shows you a short authorization code.
-   Copy it into Home Assistant and you are done. If you were sent to a web
-   address instead of shown a code, paste the whole address and the integration
-   will pick the code out of it.
-
-The code expires quickly, so do not leave it sitting in the browser.
-
-Your doors, doorbell and snapshot appear straight away.
-
-### Why the copy-and-paste step?
-
-Most integrations bounce you back to Home Assistant automatically after signing
-in. ButterflyMX's standard setup shows you a code on screen instead of
-redirecting anywhere, so there is nothing for Home Assistant to catch. Pasting
-the code does the same job. If ButterflyMX has set up a redirect address for you,
-that works too, and you can paste the whole address instead.
-
-### Staying signed in
-
-You sign in once. The integration keeps your access current on its own, and it
-does not store your password at any point.
-
-If it ever loses access, because you changed your password or moved out, Home
-Assistant shows a **Reconfigure** prompt and you sign in again. Your entities,
-automations and history survive that.
+The code expires quickly. Your doors, doorbell and snapshot appear straight
+away.
 
 ## Things to do with it
 
@@ -202,10 +168,15 @@ actions:
     default:
       - action: notify.mobile_app_<your_phone>
         data:
+          message: clear_notification
+          data:
+            tag: butterflymx
+      - action: notify.mobile_app_<your_phone>
+        data:
           title: ButterflyMX
           message: "Missed visitor at {{ trigger.to_state.attributes.device_name }}"
           data:
-            tag: butterflymx
+            tag: butterflymx_missed
             channel: ButterflyMX Missed
             importance: low
             image: "{{ trigger.to_state.attributes.image_url }}"
@@ -213,50 +184,22 @@ mode: restart
 ```
 
 **The four action IDs have to agree.** `BMX_UNLOCK` and `BMX_DECLINE` appear
-twice each, once as a button and once as a trigger. Rename one and forget the
-other and nothing matches, so every visitor silently becomes a missed one.
+twice each, as a button and as a trigger. Miss one and nothing matches, so every
+visitor silently becomes a missed one.
 
-`mode: restart` means a second visitor replaces the first rather than being
-dropped while the automation is still waiting.
-
-**It has to be the `notify.mobile_app_...` action**, the one the companion app
-registers, not a notify entity. The buttons and the photo travel in the nested
-`data:` block, and the newer `notify.send_message` action accepts only a title
-and a message, so everything below it is rejected. Find the exact name under
+**Use the `notify.mobile_app_...` action, not a notify entity.** The buttons and
+photo travel in the nested `data:` block, and `notify.send_message` accepts only
+a title and a message, so it drops all of it. Find the exact name under
 **Developer tools → Actions**.
 
-`tag` is what makes the notification update in place rather than pile up: the
-same tag on the missed notice replaces the ringing one, and `clear_notification`
-removes it outright.
-
-`ttl: 0` with `priority: high` tell Android to deliver a message immediately
-instead of batching it. That matters for the ring and for the two clears as
-well, since a dozing phone would otherwise leave the notification up after the
-door has already been opened.
-
-**Delivery speed and pop-up behavior are different things**, which is easy to
-lose an evening to. `priority` only decides how fast the message arrives. What
-makes it appear over whatever you are doing is the *channel's* importance, and
-the companion app's default "General" channel is created quietly. So the ring
-gets a channel of its own at `importance: high`, and `visibility: public` so the
-photo shows on the lock screen. The missed notice gets a second channel at
-`importance: low`, which is the same split ButterflyMX uses: their app puts
-missed calls on a separate quiet channel so they do not interrupt you twice.
-
-**A channel keeps whatever importance it was created with.** Home Assistant can
-lower it later but never raise it, so if the ring still does not pop, that
-channel already exists from an earlier notification. Either use a different
-name, or fix it on the phone: Android Settings, Apps, Home Assistant,
-Notifications, pick the channel, turn on "Pop on screen".
-
-All of these are Android options. On iOS drop them and use a `push` block for
-the same urgency.
-
-**Why 40 seconds?** That is how long the ButterflyMX app rings before giving up,
-so the notification stops offering to unlock at the same moment their app stops
-offering to answer. Their word for the door action is "Unlock", which is why the
-button says that rather than "Answer": their Answer button starts a video call,
-which this cannot do.
+**Channels decide whether it pops up; `priority` only decides how fast it
+arrives.** The companion app's default channel is a quiet one, so the ring gets
+its own at `importance: high` and the missed notice a second at `importance:
+low`, matching the split ButterflyMX uses. A channel keeps the importance it was
+created with and can only be lowered afterwards, so if the ring does not pop,
+that name already exists: rename it, or turn on "Pop on screen" for it in
+Android's notification settings. These are Android options; on iOS use a `push`
+block instead.
 
 **"Decline" only dismisses the notification.** ButterflyMX has no endpoint for
 answering or declining a call. The API can list calls and open doors, and that
@@ -416,87 +359,58 @@ notify service you already trust.
 
 ## Two residents, two logins
 
-Home Assistant runs integrations for the whole instance, not per user account.
-Signing in to Home Assistant as yourself does not give you a different
-ButterflyMX than anyone else in the house sees. What the integration is signed
-in to ButterflyMX as, everybody gets.
+Integrations run per instance, not per Home Assistant user, and one ButterflyMX
+login only ever sees its own calls. So if you each have your own ButterflyMX
+account, **add the integration twice**. Each doorbell entity is then tied to one
+resident for good, and the entity that fired tells you who was called.
 
-One ButterflyMX login also only ever sees its own calls. ButterflyMX scopes the
-call log to the signed-in resident, so if two of you have separate ButterflyMX
-accounts, one setup covers exactly one of you. There is no recipient field to
-branch on inside an automation, because every call your account can see was
-placed to you.
+Whether only one fires depends on your building's directory. Listed separately,
+as "David Unit 4B" and "Sarah Unit 4B", a visitor picks a name and one doorbell
+rings. Listed as a single unit, both ring for the same person at the door.
 
-So if you want each person's calls to reach their own phone, **add the
-integration twice**, once per ButterflyMX login. Each doorbell entity is tied to
-one resident for good, so the entity that fired tells you who the call was for.
-There is no ID to inspect.
+Three things to expect:
 
-How exact that is depends on your building's directory. If it lists residents
-separately, as in "David Unit 4B" and "Sarah Unit 4B", a visitor picks a name
-and only that person's doorbell fires. If it lists the unit once instead, a
-visitor rings the unit and both doorbells fire for the same person at the door,
-which means two notifications unless you handle it.
+- **Each login gets its own copy of everything, doors included**, so two lock
+  entities for one physical door. That is on purpose: a release is performed
+  *as* a resident and the access log records who, so opening from your lock is
+  logged as you.
+- **Sharing a unit means near-identical names**, since both are "Unit 4B".
+  Rename them before writing automations.
+- **Passes are per login too.** A code your partner made appears under theirs.
 
-This example uses real entity IDs rather than the placeholders above, because
-it only works once you have renamed the two doorbells to tell them apart. See
-the second point below.
+Door releases need none of this care: whoever's `event.*_door_opened` fires is
+whoever opened the door.
+
+### Unlocking as whoever tapped
+
+With two locks for one door, pick the one belonging to the person who pressed
+the button, so the access log names them and not you. Companion app
+notifications carry the Home Assistant user whose phone it was, and person
+entities expose theirs, so no IDs need pasting in. Swap the `lock.open` step in
+the doorbell automation for this:
 
 ```yaml
-alias: "Doorbell goes to the right phone"
-triggers:
-  - trigger: state
-    entity_id: event.davids_doorbell
-    id: david
-  - trigger: state
-    entity_id: event.sarahs_doorbell
-    id: sarah
 actions:
-  - choose:
-      - conditions:
-          - condition: trigger
-            id: david
-        sequence:
-          - action: notify.mobile_app_davids_phone
-            data:
-              message: "Someone is at the door"
-              data:
-                image: "{{ trigger.to_state.attributes.image_url }}"
-      - conditions:
-          - condition: trigger
-            id: sarah
-        sequence:
-          - action: notify.mobile_app_sarahs_phone
-            data:
-              message: "Someone is at the door"
-              data:
-                image: "{{ trigger.to_state.attributes.image_url }}"
+  - action: lock.open
+    target:
+      entity_id: >-
+        {{ 'lock.front_and_inner_door_2'
+           if wait.trigger.event.context.user_id
+              == state_attr('person.sarah_mcgowan', 'user_id')
+           else 'lock.front_and_inner_door' }}
 ```
 
-Three things to expect when you set up the second one:
+This only holds if each phone was set up by signing in as **its own** Home
+Assistant user. Set up with one shared login, every tap looks like the same
+person and lands on the `else`. To check, have them open the door once and see
+whose name ButterflyMX records.
 
-- **Each login gets its own copy of everything, doors included.** You will have
-  two lock entities for one physical door, the second suffixed `_2`. That is on
-  purpose: a door release is performed *as* a resident, and the ButterflyMX
-  access log records who opened it. Opening the door from your lock is logged as
-  you, and from your partner's as them.
-- **If you share a unit, the two sets arrive with nearly identical names**,
-  since both are "Unit 4B". Rename them to something you can tell apart before
-  you write any automations, as the example above assumes.
-- **Passes are per login too.** Each `sensor.*_passes` shows the codes created
-  by that account. A code your partner made in the app appears under theirs.
+Before any of this, check you need it. If you share a unit, one entry may
+already cover both of you, and one is simpler than two.
 
-Door releases need none of this care. The access log is scoped per resident, so
-whoever's `event.*_door_opened` fires is whoever opened the door, which makes
-"someone got home" automations straightforward.
-
-Before doing any of this, check whether you need it. If you share a unit,
-buzzing it may already reach whichever account is set up, and one entry is
-simpler than two.
-
-One caveat: nobody has run two entries side by side yet. The account scoping
-described above was checked against a real account, but the two-entry setup
-itself has not been tried. If it misbehaves, please open an issue.
+Nobody has run two entries side by side yet. The scoping above was checked
+against a real account; the two-entry setup itself has not been. Please open an
+issue if it misbehaves.
 
 ## Settings
 
@@ -531,44 +445,19 @@ and then look at why the address is not reachable: a reverse proxy, a firewall,
 or an external URL in Home Assistant that no longer matches reality. Turning it
 off is always safe.
 
-## Questions
+## What it cannot do
 
-**Can it see or do anything I cannot?**
-No. It signs in as you and is limited to exactly what your account can already
-do: the doors you can open, and calls to your own unit.
+- **No video or intercom audio.** Those live only in ButterflyMX's own apps,
+  over technology that cannot run inside Home Assistant. You get the still
+  photo from each call instead. Same answer for the cameras you see in their
+  app; if those are ordinary cameras on your network, connect to them directly.
+- **No answering a call.** The API can open doors and stop a call, not pick one
+  up. Talking to a visitor means their app.
+- **No account management.** It does not add residents, units, access groups or
+  fobs, and never will.
 
-**Does it manage residents, keys or accounts?**
-No. It does not add or remove residents, units, access groups or key fobs. It
-opens doors and tells you when someone is at one. Anything administrative
-belongs in ButterflyMX's own tools.
-
-**Do I need to expose Home Assistant to the internet?**
-No. It checks for new calls on a timer by default and works entirely from inside
-your network. Exposing Home Assistant is only needed for the optional webhook
-setting.
-
-**Can I answer or decline a call from Home Assistant?**
-No. ButterflyMX's API can list calls and open doors; there is no endpoint for
-picking up or hanging up. You can be told instantly that someone is there, see
-their photo and let them in, but talking to them means the ButterflyMX app.
-
-**Why is there no live video or intercom audio?**
-ButterflyMX only offers those through their own phone apps, using technology that
-cannot run inside Home Assistant. There is no way around it. The still photo from
-each call is the closest available, which is why you get an image rather than a
-camera. Keep using the ButterflyMX app when you want to see and talk to a
-visitor, and use this to unlock the door and to build automations around it.
-
-**What about the cameras I see in the ButterflyMX app?**
-Same answer: not available outside their apps. If those are ordinary security
-cameras on your own network, Home Assistant can usually connect to them directly,
-which works far better than going through ButterflyMX anyway.
-
-**Can I create visitor or delivery codes?**
-Yes. See [Visitor and delivery passes](#visitor-and-delivery-passes).
-
-**Will it work in my building?**
-If ButterflyMX is installed and you are a resident with an account, yes.
+It can only ever do what your own account can, against doors you can already
+open from their app.
 
 ## Troubleshooting
 
@@ -596,10 +485,6 @@ automatically.
 
 ## For developers
 
-Everything below is only relevant if you want to work on the integration itself.
-
-### Running the tests
-
 ```bash
 pip install -r requirements-dev.txt
 ruff check custom_components tests scripts
@@ -607,84 +492,35 @@ pytest
 ```
 
 The suite needs Linux or macOS. The test harness imports `homeassistant.runner`,
-which imports `fcntl` at the top level, and there is no `fcntl` on Windows, so
-collection fails before any test runs. `ruff` works everywhere. CI runs the
-suite on Ubuntu on every push.
+which imports `fcntl` at the top level, so collection fails on Windows before
+any test runs. `ruff` works everywhere, and CI runs the suite on Ubuntu on every
+push.
 
-### Checking the API by hand
-
-`scripts/probe_api.py` signs in once and reports what a live account actually
-returns: which endpoints a resident may call, what values appear in call
-payloads, whether snapshot URLs are pre-signed, and the shape of access logs,
-schedules, passes and PINs. Standard library only, so no virtualenv is needed.
+`scripts/probe_api.py` signs in and reports what a live account actually
+returns. Standard library only, every request a `GET`, and it never opens a
+door. The token is cached in `scripts/.bmx-token-<env>.json` and a redacted
+transcript written to `scripts/probe-output-<env>.json`; both are gitignored and
+names, emails, PINs and pass codes are stripped, so the transcript is safe to
+attach to an issue.
 
 ```bash
 export BMX_CLIENT_ID=...
 python scripts/probe_api.py --env sandbox
 ```
 
-Every request it makes is a `GET`; it never creates anything or opens a door. It
-caches the token in `scripts/.bmx-token-<env>.json` and writes a redacted
-transcript to `scripts/probe-output-<env>.json`. Both are gitignored, and names,
-emails, PINs, pass codes and URL signatures are stripped before anything is
-written, so the transcript is safe to attach to an issue.
-
-Sandbox credentials are requested separately from production ones. Test against
-sandbox first: door releases are real, and a mistake pointed at production opens
-an actual door.
-
-### Trying a change on a real instance
-
-Install it the way everyone else does: add your fork or branch to HACS as a
-custom repository, per [Through HACS](#through-hacs) above. That exercises the
-packaging as well as the code, which means `hacs.json`, the manifest version and
-the brand images all get checked.
-
-Bump `version` in `manifest.json` before you push, or HACS will not offer the
-update. A full Home Assistant restart is needed for Python changes; reloading
-the config entry re-runs setup without re-importing changed modules.
-
-### How it talks to ButterflyMX
-
-Authorization is the OAuth authorization-code flow with PKCE. ButterflyMX issues
-public clients, so nothing sensitive ever travels in the URL you open in your
-browser. Access tokens last 24 hours. The integration
-refreshes a few minutes before expiry and stores both halves of the new pair,
-because ButterflyMX rotates the refresh token every time. A rejected refresh
-raises a re-authentication flow.
-
-There is no client-side request throttling. ButterflyMX publishes no rate limits
-and returns no rate-limit headers, requests go out one at a time rather than in
-parallel, and pacing them only added delay. What is left is the part that
-matters when something goes wrong: exponential backoff with jitter on `429` and
-`5xx`, honoring `Retry-After`. Door releases are never retried, since a retry
-could open a door twice, and repeated releases of the same door within 3 seconds
-are dropped. Building topology is refreshed hourly.
-
-Calls are read from the call log and door openings from the access log, always.
-When webhook push is on, a delivery carries neither: it only tells the
-integration to read the logs immediately. A delivery has no call ID the REST API
-recognises, no timestamp, and nothing saying whether anyone answered, so reading
-it as data would mean ringing the doorbell twice for one visitor and knowing
-less about them. Everything comes from the logs; push only makes them prompt.
-
-The access log is polled more slowly than the call log. A visitor at the door is
-a call and has to be immediate. A door having been opened is useful to know
-about, but not every few seconds.
+Test against sandbox first. Door releases are real, and a mistake pointed at
+production opens an actual door.
 
 Issues and pull requests are welcome.
 
 ## Trademarks
 
-ButterflyMX and the ButterflyMX logo are trademarks of ButterflyMX, Inc. The
-brand images in `custom_components/butterflymx/brand/` are ButterflyMX's
-property and are included only to identify the product this integration talks
-to, the way Home Assistant's own
+ButterflyMX and its logo are trademarks of ButterflyMX, Inc. The images in
+`custom_components/butterflymx/brand/` are their property and identify the
+product this integration talks to, the way Home Assistant's
 [brands repository](https://github.com/home-assistant/brands) does for every
-other integration.
-
-This project is not built, endorsed or supported by ButterflyMX, and the MIT
-licence below covers the code in this repository, not those images.
+integration. This project is not built, endorsed or supported by ButterflyMX,
+and the MIT licence covers the code here, not those images.
 
 ## License
 
