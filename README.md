@@ -136,19 +136,18 @@ the action, meant to be dropped into an automation or script you already have.
 
 ```yaml
 alias: "Someone is at the door"
-mode: restart
-variables:
-  # The door the "Let them in" button opens.
-  door: lock.<door>
 triggers:
   - trigger: state
     entity_id: event.<unit>_doorbell
 actions:
-  - action: notify.mobile_app_my_phone
+  - action: notify.mobile_app_<your_phone>
     data:
-      title: "Someone is at {{ trigger.to_state.attributes.device_name }}"
-      message: "Tap to see who it is"
+      title: ButterflyMX
+      message: "Someone is at {{ trigger.to_state.attributes.device_name }}"
       data:
+        tag: butterflymx
+        ttl: 0
+        priority: high
         image: "{{ trigger.to_state.attributes.image_url }}"
         actions:
           - action: BMX_OPEN
@@ -167,12 +166,23 @@ actions:
     value_template: "{{ wait.trigger is not none }}"
   - action: lock.open
     target:
-      entity_id: "{{ door }}"
+      entity_id: lock.<door>
+mode: restart
 ```
 
-Change `door:` at the top to whichever lock you want the button to open.
 `mode: restart` means a second visitor replaces the first rather than being
 dropped while the automation is still waiting.
+
+**It has to be the `notify.mobile_app_...` action**, the one the companion app
+registers, not a notify entity. The buttons and the photo travel in the nested
+`data:` block, and the newer `notify.send_message` action accepts only a title
+and a message, so everything below it is rejected. Find the exact name under
+**Developer tools → Actions**.
+
+`tag` replaces the previous notification instead of stacking a new one, and
+`ttl: 0` with `priority: high` tells Android to deliver immediately rather than
+batching. Both are Android options; on iOS drop them and use a `push` block if
+you want the same urgency.
 
 **"Ignore" only dismisses the notification.** ButterflyMX has no endpoint for
 answering or declining a call. The API can list calls and open doors, and that
