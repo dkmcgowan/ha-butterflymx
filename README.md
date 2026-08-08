@@ -136,7 +136,6 @@ the action, meant to be dropped into an automation or script you already have.
 
 ```yaml
 alias: "Someone is at the door"
-mode: restart
 triggers:
   - trigger: state
     entity_id: event.<unit>_doorbell
@@ -182,6 +181,8 @@ actions:
               message: clear_notification
               data:
                 tag: butterflymx
+                ttl: 0
+                priority: high
       # Decline tapped.
       - conditions:
           - condition: template
@@ -192,6 +193,8 @@ actions:
               message: clear_notification
               data:
                 tag: butterflymx
+                ttl: 0
+                priority: high
     # Nobody tapped anything for 40 seconds.
     default:
       - action: notify.mobile_app_<your_phone>
@@ -201,6 +204,7 @@ actions:
           data:
             tag: butterflymx
             image: "{{ trigger.to_state.attributes.image_url }}"
+mode: restart
 ```
 
 **The four action IDs have to agree.** `BMX_UNLOCK` and `BMX_DECLINE` appear
@@ -218,10 +222,12 @@ and a message, so everything below it is rejected. Find the exact name under
 
 `tag` is what makes the notification update in place rather than pile up: the
 same tag on the missed notice replaces the ringing one, and `clear_notification`
-removes it outright. `ttl: 0` with `priority: high` tell Android to deliver the
-ring immediately instead of batching it. The missed notice deliberately leaves
-both out, so it arrives quietly. Those two are Android options; on iOS drop them
-and use a `push` block if you want the same urgency.
+removes it outright. `ttl: 0` with `priority: high` tell Android to deliver a
+message immediately instead of batching it, which matters for the ring and for
+the two clears as well, since a dozing phone would otherwise leave the
+notification up after the door has already been opened. The missed notice is
+the one place they are deliberately left out, so it arrives quietly. Both are
+Android options; on iOS drop them and use a `push` block for the same urgency.
 
 **Why 40 seconds?** That is how long the ButterflyMX app rings before giving up,
 so the notification stops offering to unlock at the same moment their app stops
