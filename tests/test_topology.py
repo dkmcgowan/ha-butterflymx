@@ -39,6 +39,9 @@ class StubClient:
     async def async_get_access_tools(self) -> list:
         return []
 
+    async def async_get_access_point_details(self) -> dict:
+        return {}
+
 
 def _coordinator(
     hass: HomeAssistant, entry: MockConfigEntry, unreachable: set[int]
