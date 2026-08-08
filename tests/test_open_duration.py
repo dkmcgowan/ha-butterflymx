@@ -16,6 +16,10 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.butterflymx.api import ButterflyMXClient
 from custom_components.butterflymx.auth import ButterflyMXAuth
 from custom_components.butterflymx.exceptions import ButterflyMXResponseError
+from custom_components.butterflymx.graphql import (
+    ACCESS_POINT_DETAIL_QUERY,
+    parse_access_point_details,
+)
 from custom_components.butterflymx.models import AccessPointDetail
 
 from .conftest import (
@@ -75,42 +79,54 @@ def test_a_node_with_nothing_to_join_on_is_dropped() -> None:
     assert AccessPointDetail.from_graphql({"name": "Front Door"}) is None
 
 
-# --- The client ---------------------------------------------------------------
+# --- Reading a result ---------------------------------------------------------
 
 
-async def test_details_are_keyed_by_access_point(hass: HomeAssistant, aioclient_mock):
+def test_details_are_keyed_by_access_point() -> None:
     """The query result comes back ready to look up by access point ID."""
-    aioclient_mock.post(GRAPHQL_URL, json=graphql_access_points())
-
-    details = await _client(hass).async_get_access_point_details()
+    details = parse_access_point_details(graphql_access_points())
 
     assert set(details) == {ACCESS_POINT_ID}
     assert details[ACCESS_POINT_ID].open_duration == ACCESS_POINT_OPEN_DURATION
 
 
-async def test_graphql_reports_failure_inside_a_200(
-    hass: HomeAssistant, aioclient_mock
-):
-    """A 200 with an errors array is a failed query, not an empty account."""
-    aioclient_mock.post(
-        GRAPHQL_URL,
-        json={"errors": [{"message": "Field 'legacyId' doesn't exist"}]},
-    )
-
+def test_graphql_reports_failure_inside_a_200() -> None:
+    """An errors array is a failed query, not an account with no doors."""
     with pytest.raises(ButterflyMXResponseError, match="legacyId"):
-        await _client(hass).async_get_access_point_details()
+        parse_access_point_details(
+            {"errors": [{"message": "Field 'legacyId' doesn't exist"}]}
+        )
 
 
-async def test_a_second_page_is_reported_rather_than_dropped(
-    hass: HomeAssistant, aioclient_mock, caplog
-):
+def test_an_account_with_no_doors_is_not_an_error() -> None:
+    """Empty is a real answer, and the caller already handles a missing value."""
+    assert parse_access_point_details({"data": {"tenants": None}}) == {}
+
+
+def test_a_second_page_is_reported_rather_than_dropped(caplog) -> None:
     """Doors we did not read must not look like doors that do not exist."""
-    aioclient_mock.post(GRAPHQL_URL, json=graphql_access_points(has_next_page=True))
+    details = parse_access_point_details(graphql_access_points(has_next_page=True))
+
+    assert set(details) == {ACCESS_POINT_ID}
+    assert "more access points than one page" in caplog.text
+
+
+# --- The request ---------------------------------------------------------------
+
+
+async def test_the_query_is_posted_to_the_graphql_endpoint(
+    hass: HomeAssistant, aioclient_mock
+) -> None:
+    """The one thing the client half owns is where the query goes."""
+    aioclient_mock.post(GRAPHQL_URL, json=graphql_access_points())
 
     details = await _client(hass).async_get_access_point_details()
 
     assert set(details) == {ACCESS_POINT_ID}
-    assert "more access points than one page" in caplog.text
+    method, url, body, _ = aioclient_mock.mock_calls[0]
+    assert method.lower() == "post"
+    assert url.path == "/denizen/v1/graphql"
+    assert body["query"] == ACCESS_POINT_DETAIL_QUERY
 
 
 # --- The lock entity ----------------------------------------------------------

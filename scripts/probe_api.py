@@ -15,11 +15,13 @@ It then looks at the endpoints planned for later releases, so their real field
 values are known before any entity code is written against them: access logs,
 access point schedules, visitor and delivery passes, and the resident PIN.
 
-The last step is the one thing v4 cannot answer: how long a door stays open
-once released.  That lives on the panel, which only v3 will hand over.
+The last step checks the one thing the integration reads that is not v4: how
+long each door stays open, which comes from the GraphQL API.  It also checks
+the join the durations depend on, ``legacyId`` against the v4 access point ID.
 
-Every request is a GET.  Nothing here creates, modifies or deletes anything, and
-no door is ever released.
+Nothing here creates, modifies or deletes anything, and no door is ever
+released.  Every REST call is a GET; the GraphQL step is a POST only because
+that is how a GraphQL query is transported.
 
 Standard library only, so it runs with any Python 3.11+ and needs no virtualenv.
 
@@ -83,6 +85,25 @@ EXPECTED_KEYS = {
     "call": {"id", "logged_at", "notification_type", "device", "image_url"},
 }
 
+# Deliberately a copy of the query in custom_components/butterflymx/graphql.py
+# rather than an import.  This script is a check on the integration, and a check
+# that shares the thing it is checking cannot catch it being wrong.  It also
+# keeps the script standard-library only, which is what makes it runnable
+# without a virtualenv.
+ACCESS_POINT_DETAIL_QUERY = """
+query {
+  tenants {
+    pageInfo { hasNextPage }
+    nodes {
+      accessPoints {
+        pageInfo { hasNextPage }
+        nodes { legacyId name openDuration online inOpenHours }
+      }
+    }
+  }
+}
+"""
+
 REDACT_KEYS = {
     # Credentials and access tools.
     "code",
@@ -96,10 +117,6 @@ REDACT_KEYS = {
     "client_id",
     "client_secret",
     "serial_number",
-    # A panel's beacon UUID identifies the hardware at someone's front door as
-    # squarely as its serial number does.  The terminal prints it; the file
-    # meant for pasting into an issue does not.
-    "guid",
     # Who the resident is.
     "email",
     "first_name",
@@ -130,14 +147,19 @@ def _request(
     url: str,
     *,
     data: dict[str, str] | None = None,
+    json_body: Any | None = None,
     token: str | None = None,
     raw: bool = False,
-    accept: str = "application/json",
 ) -> tuple[int, Any]:
     """Perform a request and return ``(status, body)`` without raising on 4xx."""
-    body = urllib.parse.urlencode(data).encode() if data else None
+    if json_body is not None:
+        body = json.dumps(json_body).encode()
+    else:
+        body = urllib.parse.urlencode(data).encode() if data else None
     request = urllib.request.Request(url, data=body, method=method)
-    request.add_header("Accept", accept)
+    request.add_header("Accept", "application/json")
+    if json_body is not None:
+        request.add_header("Content-Type", "application/json")
     if token:
         request.add_header("Authorization", f"Bearer {token}")
 
@@ -168,22 +190,14 @@ def _api_get(api_url: str, path: str, token: str, **params: Any) -> tuple[int, A
     return _request("GET", url, token=token)
 
 
-def _v3_get(
-    api_url: str, path: str, token: str, *, mobile: bool = False, **params: Any
-) -> tuple[int, Any]:
-    """GET a v3 endpoint.
-
-    v3 speaks JSON:API rather than the plain JSON v4 returns, so it wants its
-    own Accept header and its own base path.  Same host and same token.
-
-    ``mobile`` switches to the ``/mobile/v3`` prefix.  It is not a different
-    API, it is a different serialization of the same records, and some
-    resources are fuller there than under plain ``/v3``.
-    """
-    prefix = "/mobile/v3" if mobile else "/v3"
-    query = urllib.parse.urlencode(params) if params else ""
-    url = f"{api_url}{prefix}{path}" + (f"?{query}" if query else "")
-    return _request("GET", url, token=token, accept="application/vnd.api+json")
+def _graphql(api_url: str, token: str, query: str) -> tuple[int, Any]:
+    """Run a GraphQL query.  Same host and same token as the REST calls."""
+    return _request(
+        "POST",
+        f"{api_url}/denizen/v1/graphql",
+        json_body={"query": query},
+        token=token,
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -636,106 +650,86 @@ def _probe_roadmap(
                 "output above only if you need the raw value"
             )
 
-    unit = (tenant or {}).get("unit") or {}
-    _probe_panels(api_url, token, unit.get("id"), transcript, findings)
+    _probe_access_point_details(api_url, token, point_rows, transcript, findings)
 
 
-def _probe_panels(
+def _probe_access_point_details(
     api_url: str,
     token: str,
-    unit_id: Any,
+    point_rows: list[Any],
     transcript: dict[str, Any],
     findings: list[str],
 ) -> None:
-    """Read how long a door actually stays open.
+    """Check the one thing the integration reads that is not v4.
 
-    Nothing in v4 says.  A release request carries no duration and returns none,
-    and the access log only records that the door was released, so the
-    integration's relock delay is a guess.
+    ``openDuration`` is how many seconds a door stays released, it is set per
+    door, and it appears nowhere in v4: a release takes no duration and returns
+    none, and the access log only records that the door opened.  Without it the
+    lock entity has to guess when the door re-engaged, and on a real building
+    the three doors on one panel are set to 4, 9 and 14 seconds.
 
-    The panel knows: it carries one entry per door lock, each with an
-    ``open_duration_in_sec`` and an ``open_delay_in_sec``.  Reaching it takes
-    care.  ``/v3/me/calls?include=panel`` will side-load a panel, but a trimmed
-    one carrying only ``name`` and ``nfc``, and asking for the missing fields
-    with a JSON:API sparse fieldset does not widen it.  The full serialization
-    only comes back from the ``/mobile/v3`` host prefix, which is where the
-    official app reads its own door release history.
+    ``legacyId`` is what makes it usable.  It is the same integer v4 calls an
+    access point ID, so the two views join with no name matching, and that join
+    is the assumption most worth re-checking here.
 
-    Read-only, same host, same token.  The full panel also describes its own
-    iBeacon, worth printing while we are here: it sits at the door with a
-    transmit power ButterflyMX tuned for proximity.
+    A query is a read.  POST is only how GraphQL is transported.
     """
-    if not unit_id:
-        findings.append("   no unit on the tenant record, so the panel cannot be read")
-        return
+    print("\n[10/10] POST /denizen/v1/graphql (access point openDuration)")
+    status, payload = _graphql(api_url, token, ACCESS_POINT_DETAIL_QUERY)
+    transcript["access_point_details"] = {"status": status, "body": redact(payload)}
 
-    path = f"/units/{unit_id}/door_releases"
-    print(f"\n[10/10] GET /mobile/v3{path}?include=panel")
-    status, payload = _v3_get(
-        api_url, path, token, include="panel", mobile=True, **{"page[size]": 1}
-    )
-    transcript["v3_panel"] = {"status": status, "body": redact(payload)}
-
-    if status != 200:
+    if status != 200 or not isinstance(payload, dict):
         findings.append(
-            f"!! /mobile/v3{path} returned HTTP {status}; the configured "
-            "door-open duration cannot be read, so the relock delay stays a guess"
+            f"!! the GraphQL endpoint returned HTTP {status}; every lock would "
+            "fall back to the configured relock delay"
         )
         print(f"      HTTP {status}")
         return
 
-    included = payload.get("included") if isinstance(payload, dict) else None
-    panels = [
-        row
-        for row in (included or [])
-        if isinstance(row, dict) and row.get("type") == "panels"
-    ]
-    print(f"      HTTP {status}, {len(panels)} panel(s) side-loaded")
-
-    if not panels:
-        findings.append(
-            "   no panel side-loaded. The include hangs off a door release, so an "
-            "account that has never opened a door has nothing to attach it to: "
-            "buzz the door once and re-run."
-        )
+    # GraphQL reports its own failures inside a 200, which is exactly the trap
+    # the integration guards against, so the probe has to check it too.
+    if errors := payload.get("errors"):
+        findings.append(f"!! the access point query was rejected: {errors}")
+        print(f"      HTTP {status}, query rejected")
         return
 
-    print("      first panel, in full:")
-    print(json.dumps(redact(panels[0].get("attributes") or {}), indent=2, sort_keys=True))
+    nodes = [
+        node
+        for tenant in ((payload.get("data") or {}).get("tenants") or {}).get("nodes")
+        or []
+        if isinstance(tenant, dict)
+        for node in ((tenant.get("accessPoints") or {}).get("nodes") or [])
+        if isinstance(node, dict)
+    ]
+    print(f"      HTTP {status}, {len(nodes)} access point(s)")
 
-    for panel in panels:
-        panel_id = panel.get("id")
-        attributes = panel.get("attributes") or {}
+    if not nodes:
+        findings.append("!! GraphQL returned no access points, but v4 lists doors")
+        return
 
-        locks = [lock for lock in (attributes.get("door_locks") or []) if isinstance(lock, dict)]
-        if not locks:
-            findings.append(f"!! panel {panel_id} lists no door_locks")
-        # A duration of zero is an output the panel has but nothing is wired to.
-        live = [lock for lock in locks if lock.get("open_duration_in_sec")]
-        for lock in live:
-            findings.append(
-                f"OK panel {panel_id} {lock.get('name')}: "
-                f"open_duration_in_sec={lock.get('open_duration_in_sec')}, "
-                f"open_delay_in_sec={lock.get('open_delay_in_sec')}"
-            )
+    for node in nodes:
         findings.append(
-            f"   panel {panel_id}: {len(live)} of {len(locks)} lock outputs are in use"
+            f"OK {node.get('name')!r} (access point {node.get('legacyId')}): "
+            f"openDuration={node.get('openDuration')}s, "
+            f"online={node.get('online')}, inOpenHours={node.get('inOpenHours')}"
         )
 
-        beacon = attributes.get("bluetooth_config")
-        if isinstance(beacon, dict):
-            findings.append(
-                f"   panel {panel_id} advertises a beacon: major={beacon.get('major')}, "
-                f"minor={beacon.get('minor')}, txpower={beacon.get('txpower')}"
-            )
-            # Printed rather than written, because the transcript redacts it.
-            print(f"      panel {panel_id} beacon uuid: {beacon.get('guid')}")
+    missing = [node.get("name") for node in nodes if not node.get("openDuration")]
+    if missing:
+        findings.append(
+            f"   no openDuration on {missing}, so those doors use the fallback"
+        )
 
-    findings.append(
-        "   door locks are named lock1..lock4, after the panel's outputs, and "
-        "nothing ties one to an access point. Durations are readable; which door "
-        "each belongs to is not."
-    )
+    graphql_ids = {str(node.get("legacyId")) for node in nodes}
+    v4_ids = {str(row.get("id")) for row in point_rows if isinstance(row, dict)}
+    if graphql_ids == v4_ids:
+        findings.append("OK every legacyId matches a v4 access point ID")
+    else:
+        findings.append(
+            f"!! legacyId and v4 access point IDs disagree: only in GraphQL "
+            f"{sorted(graphql_ids - v4_ids)}, only in v4 {sorted(v4_ids - graphql_ids)}. "
+            "Durations are joined on this, so a mismatch means wrong or missing ones."
+        )
 
 
 # --------------------------------------------------------------------------- #
