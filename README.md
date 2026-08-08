@@ -32,7 +32,7 @@ them by hand.
 | `image.unit_4b_last_call_snapshot` | The photo the intercom took of your most recent visitor. |
 | `sensor.unit_4b_last_call` | When the last call happened, and who or what it came from. |
 | `event.unit_4b_door_opened` | Fires whenever one of your doors is opened, however it happened: a PIN at the keypad, a fob, someone answering the intercom in the app, or Home Assistant. |
-| `sensor.unit_4b_last_door_opened` | When a door was last opened, which one, and by what method. |
+| `sensor.unit_4b_last_door_opened` | When a door was last opened, which one, and how — `PIN`, `Fob`, `App call` or `API`. |
 | `sensor.unit_4b_passes` | How many visitor and delivery codes are currently valid, and what they are for. See [Visitor and delivery passes](#visitor-and-delivery-passes). |
 
 Names will match your own building and unit.

@@ -36,6 +36,9 @@ class StubClient:
     async def async_get_devices(self, building_id: int) -> list:
         return []
 
+    async def async_get_access_tools(self) -> list:
+        return []
+
 
 def _coordinator(
     hass: HomeAssistant, entry: MockConfigEntry, unreachable: set[int]

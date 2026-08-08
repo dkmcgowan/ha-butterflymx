@@ -45,6 +45,7 @@ from .exceptions import (
 from .models import (
     AccessLogEntry,
     AccessPoint,
+    AccessTool,
     Call,
     Device,
     Keychain,
@@ -307,6 +308,18 @@ class ButterflyMXClient:
         )
         devices = [Device.from_api(item) for item in raw]
         return [device for device in devices if device is not None]
+
+    async def async_get_access_tools(self) -> list[AccessTool]:
+        """List the PINs and fobs on this account.
+
+        Read so the access log can name what opened a door instead of printing
+        an ID.  The response also carries each PIN in plaintext, which
+        :class:`~custom_components.butterflymx.models.AccessTool` deliberately
+        does not keep.
+        """
+        raw = await self._async_get_paginated("/access_tools")
+        tools = [AccessTool.from_api(item) for item in raw]
+        return [tool for tool in tools if tool is not None]
 
     # -- Calls ----------------------------------------------------------------
 

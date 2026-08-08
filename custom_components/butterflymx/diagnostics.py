@@ -33,6 +33,13 @@ TO_REDACT = {
     # A snapshot URL is pre-signed, so the link is the picture.
     "image_url",
     "serial_number",
+    # Things that open a door.  None of these is parsed into a model today --
+    # AccessTool drops the PIN it is sent, and passes never reach diagnostics --
+    # so this is here to make sure that stays true if one of them ever is.
+    "code",
+    "pin_code",
+    "qr_code_url",
+    "instructions_url",
     # Who the resident is.
     "email",
     "first_name",

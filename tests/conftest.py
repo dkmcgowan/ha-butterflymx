@@ -109,6 +109,25 @@ DEVICES_RESPONSE = {
     "page_info": {"current_page": 1, "total_pages": 1, "next_page": None},
 }
 
+ACCESS_TOOL_ID = 8432576
+
+# Shaped like the live response, PIN included: the point of the model is that it
+# reads the ID and the type and drops the code.
+ACCESS_TOOLS_RESPONSE: dict[str, Any] = {
+    "data": [
+        {
+            "id": ACCESS_TOOL_ID,
+            "created_at": "2026-04-18T15:00:18Z",
+            "updated_at": "2026-08-07T22:16:00Z",
+            "code": "131619",
+            "type": "pin",
+            "building_id": BUILDING_ID,
+            "tenant_id": TENANT_ID,
+        }
+    ],
+    "page_info": {"current_page": 1, "total_pages": 1, "next_page": None},
+}
+
 EMPTY_CALLS_RESPONSE: dict[str, Any] = {
     "data": [],
     "page_info": {"current_page": 1, "total_pages": 1, "next_page": None},
@@ -246,6 +265,7 @@ def register_topology(
     mock.get(f"{API_URL}/v4/tenants", json=TENANTS_RESPONSE)
     mock.get(f"{API_URL}/v4/access_points", json=ACCESS_POINTS_RESPONSE)
     mock.get(f"{API_URL}/v4/devices", json=DEVICES_RESPONSE)
+    mock.get(f"{API_URL}/v4/access_tools", json=ACCESS_TOOLS_RESPONSE)
     mock.get(f"{API_URL}/v4/buildings/{BUILDING_ID}/calls", json=EMPTY_CALLS_RESPONSE)
     mock.get(
         f"{API_URL}/v4/buildings/{BUILDING_ID}/access_logs",

@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 import logging
-from typing import Any
+from typing import Any, ClassVar
 
 from homeassistant.util import dt as dt_util
 
@@ -220,6 +220,52 @@ class Device:
             model=data.get("model"),
             serial_number=data.get("serial_number"),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class AccessTool:
+    """A PIN or a fob belonging to this account.
+
+    Only here to give the access log something readable to say.  Nine door
+    openings in ten arrive as ``entry_method: {"access_tool": 8432576}``, which
+    on its own tells a reader nothing at all.
+
+    **``code`` is deliberately not parsed.**  The API returns the live PIN in
+    plaintext next to everything else here, and a field that is never read
+    cannot be leaked by a later change to diagnostics, attributes or a log line.
+    Naming the tool is the whole job; the digits are not needed for it.
+    """
+
+    id: int
+    type: str | None = None
+    name: str | None = None
+
+    #: Friendlier words for the type values the API uses.
+    LABELS: ClassVar[dict[str, str]] = {
+        "pin": "PIN",
+        "rfid_tag": "Fob",
+        "rfid": "Fob",
+    }
+
+    @classmethod
+    def from_api(cls, data: dict[str, Any]) -> AccessTool | None:
+        """Build an AccessTool from an API payload."""
+        tool_id = _int_or_none(data.get("id"), field_name="access_tool.id")
+        if tool_id is None:
+            _LOGGER.warning(
+                "Ignoring ButterflyMX access tool with no usable id: %s", sorted(data)
+            )
+            return None
+        return cls(id=tool_id, type=data.get("type"), name=data.get("name"))
+
+    @property
+    def label(self) -> str:
+        """What to call this in an event or an attribute."""
+        if self.name:
+            return self.name
+        if not self.type:
+            return f"Access tool {self.id}"
+        return self.LABELS.get(self.type, self.type.replace("_", " ").capitalize())
 
 
 @dataclass(frozen=True, slots=True)
@@ -580,6 +626,16 @@ class ButterflyMXTopology:
     tenants: list[Tenant] = field(default_factory=list)
     access_points: list[AccessPoint] = field(default_factory=list)
     devices: list[Device] = field(default_factory=list)
+    access_tools: list[AccessTool] = field(default_factory=list)
+
+    def access_tool(self, tool_id: int | None) -> AccessTool | None:
+        """Look up the PIN or fob an access log entry refers to."""
+        if tool_id is None:
+            return None
+        for tool in self.access_tools:
+            if tool.id == tool_id:
+                return tool
+        return None
 
     @property
     def building_ids(self) -> list[int]:

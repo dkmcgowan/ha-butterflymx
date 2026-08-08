@@ -15,7 +15,7 @@ Two loops with very different cadences:
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 import logging
 from typing import TYPE_CHECKING
@@ -47,6 +47,7 @@ from .exceptions import (
 from .models import (
     AccessLogEntry,
     AccessPoint,
+    AccessTool,
     ButterflyMXTopology,
     Call,
     Device,
@@ -220,6 +221,17 @@ class ButterflyMXTopologyCoordinator(DataUpdateCoordinator[ButterflyMXTopology])
                         "Could not list devices for building %s: %s", building_id, err
                     )
 
+            # Names for the PINs and fobs the access log refers to.  Not worth
+            # failing the refresh over: without them a door opening still
+            # reports, it just says "access_tool 8432576" instead of "PIN".
+            access_tools: list[AccessTool] = []
+            try:
+                access_tools = await self.client.async_get_access_tools()
+            except ButterflyMXAuthError:
+                raise
+            except ButterflyMXError as err:
+                _LOGGER.debug("Could not list access tools: %s", err)
+
             if unreachable and len(unreachable) == len(building_ids):
                 # Nothing came back at all, so this is a general failure rather
                 # than one bad building.  Fail the refresh and keep the previous
@@ -236,7 +248,10 @@ class ButterflyMXTopologyCoordinator(DataUpdateCoordinator[ButterflyMXTopology])
             raise UpdateFailed(str(err)) from err
 
         return ButterflyMXTopology(
-            tenants=tenants, access_points=access_points, devices=devices
+            tenants=tenants,
+            access_points=access_points,
+            devices=devices,
+            access_tools=access_tools,
         )
 
 
@@ -501,6 +516,7 @@ class ButterflyMXAccessLogCoordinator(DataUpdateCoordinator[dict[int, AccessLogE
 
         for entry in fresh:
             self._remember(entry.id)
+            entry = _name_the_tool(entry, topology)
             tenant = self._match_tenant(entry, topology)
             if tenant is None:
                 _LOGGER.debug(
@@ -546,6 +562,27 @@ class ButterflyMXAccessLogCoordinator(DataUpdateCoordinator[dict[int, AccessLogE
                 if tenant.id == entry.tenant_id:
                     return tenant
         return topology.tenant_for_unit(entry.unit_id)
+
+
+def _name_the_tool(
+    entry: AccessLogEntry, topology: ButterflyMXTopology
+) -> AccessLogEntry:
+    """Replace ``access_tool`` with what the tool actually is.
+
+    Done once here rather than at each place it is displayed, so the event, the
+    bus event and the sensor all read the same without any of them having to
+    reach for the topology.  The ID is kept alongside, since that is what an
+    automation would match on if it wants to be exact.
+
+    Nine door openings in ten look like this, so it is the difference between a
+    log of "access_tool 8432576" and a log of "PIN".
+    """
+    if entry.entry_method != "access_tool":
+        return entry
+    tool = topology.access_tool(entry.access_tool_id)
+    if tool is None:
+        return entry
+    return replace(entry, entry_method=tool.label)
 
 
 class ButterflyMXPassCoordinator(DataUpdateCoordinator[dict[int, Pass]]):
