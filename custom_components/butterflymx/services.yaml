@@ -62,3 +62,9 @@ revoke_pass:
         number:
           mode: box
           min: 1
+
+decline_call:
+  target:
+    entity:
+      integration: butterflymx
+      domain: event

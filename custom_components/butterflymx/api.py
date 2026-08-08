@@ -34,6 +34,8 @@ from .const import (
     MAX_RETRIES,
     PAGE_SIZE,
     REQUEST_TIMEOUT,
+    V3_CONTENT_TYPE,
+    V3_PATH,
     WEBHOOK_RESOURCE_CALL,
 )
 from .exceptions import (
@@ -47,6 +49,7 @@ from .models import (
     AccessPoint,
     AccessTool,
     Call,
+    CallHandle,
     Device,
     Keychain,
     Tenant,
@@ -123,9 +126,11 @@ class ButterflyMXClient:
         params: Mapping[str, Any] | None = None,
         json: Any | None = None,
         retry: bool = True,
+        base_path: str = API_VERSION_PATH,
+        content_type: str | None = None,
     ) -> Any:
         """Perform an authenticated request and return the decoded body."""
-        url = f"{self._api_url}{API_VERSION_PATH}{path}"
+        url = f"{self._api_url}{base_path}{path}"
         attempt = 0
         refreshed = False
 
@@ -134,8 +139,11 @@ class ButterflyMXClient:
             token = await self._auth.async_get_access_token()
             headers = {
                 "Authorization": f"Bearer {token}",
-                "Accept": "application/json",
+                "Accept": content_type or "application/json",
             }
+            if content_type is not None and json is not None:
+                # v3 speaks JSON:API and rejects a plain application/json body.
+                headers["Content-Type"] = content_type
 
             try:
                 response = await self._session.request(
@@ -505,6 +513,58 @@ class ButterflyMXClient:
     async def async_delete_keychain(self, keychain_id: int) -> None:
         """Revoke a pass, and with it every code it issued."""
         await self._async_request("DELETE", f"/keychains/{keychain_id}", retry=False)
+
+    # -- Telling the panel a call was handled ---------------------------------
+
+    async def async_get_call_handle(self, call_id: int) -> CallHandle | None:
+        """Find the guid and panel for a call, so the panel can be told about it.
+
+        v4 does not carry either, and they are what the panel is addressed by.
+        The two APIs number calls the same way, verified on a live account, so
+        the ID this integration already has is enough to find the rest.
+        """
+        payload = await self._async_request(
+            "GET", "/me/calls", base_path=V3_PATH, content_type=V3_CONTENT_TYPE
+        )
+        data = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(data, list):
+            return None
+        for item in data:
+            handle = CallHandle.from_v3(item)
+            if handle is not None and handle.call_id == call_id:
+                return handle
+        _LOGGER.debug("No v3 record for call %s; cannot notify the panel", call_id)
+        return None
+
+    async def async_notify_panel(self, command: str, handle: CallHandle) -> None:
+        """Tell the panel a call has been handled.
+
+        Without this the panel keeps dialling and rolls over to a phone call,
+        even though the door has already been opened.  Releasing a door and
+        telling the panel about it are two separate things, and only the first
+        one is in v4.
+
+        Not retried: these are only worth sending while the call is still up,
+        and a late duplicate would be acting on a call that has moved on.
+        """
+        await self._async_request(
+            "POST",
+            f"/notifications/{command}",
+            json={
+                "data": {
+                    "type": "notifications",
+                    "attributes": {
+                        "call_guid": handle.guid,
+                        "source_id": handle.panel_id,
+                        "video": False,
+                        "audio": False,
+                    },
+                }
+            },
+            retry=False,
+            base_path=V3_PATH,
+            content_type=V3_CONTENT_TYPE,
+        )
 
     # -- Images ---------------------------------------------------------------
 

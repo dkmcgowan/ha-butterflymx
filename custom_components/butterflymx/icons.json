@@ -23,6 +23,7 @@
     "create_delivery_pass": "mdi:package-variant-closed",
     "create_visitor_pass": "mdi:account-key",
     "list_passes": "mdi:format-list-bulleted",
-    "revoke_pass": "mdi:key-remove"
+    "revoke_pass": "mdi:key-remove",
+    "decline_call": "mdi:phone-hangup"
   }
 }

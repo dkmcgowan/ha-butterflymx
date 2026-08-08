@@ -90,6 +90,11 @@ class ButterflyMXCallEntity(CoordinatorEntity[ButterflyMXCallCoordinator]):
         self._attr_device_info = unit_device_info(tenant)
 
     @property
+    def tenant(self) -> Tenant:
+        """Return the tenancy this entity belongs to."""
+        return self._tenant
+
+    @property
     def _latest_call(self) -> Call | None:
         """Return the most recent call seen for this tenant."""
         return (self.coordinator.data or {}).get(self._tenant.id)

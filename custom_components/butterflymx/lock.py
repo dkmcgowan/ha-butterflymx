@@ -26,8 +26,13 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import ButterflyMXConfigEntry
-from .const import DOMAIN, DOOR_RELEASE_COOLDOWN
-from .coordinator import ButterflyMXTopologyCoordinator, LockTarget, build_lock_targets
+from .const import DOMAIN, DOOR_RELEASE_COOLDOWN, PANEL_COMMAND_OPEN_DOOR
+from .coordinator import (
+    ButterflyMXCallCoordinator,
+    ButterflyMXTopologyCoordinator,
+    LockTarget,
+    build_lock_targets,
+)
 from .entity import ButterflyMXTopologyEntity, door_device_info
 from .exceptions import ButterflyMXError
 from .models import ButterflyMXTopology
@@ -56,7 +61,9 @@ async def async_setup_entry(
                 continue
             created.add(target.unique_key)
             new_entities.append(
-                ButterflyMXLock(coordinator, target, runtime.relock_delay)
+                ButterflyMXLock(
+                    coordinator, target, runtime.relock_delay, runtime.calls
+                )
             )
         if new_entities:
             async_add_entities(new_entities)
@@ -77,11 +84,13 @@ class ButterflyMXLock(ButterflyMXTopologyEntity, LockEntity):
         coordinator: ButterflyMXTopologyCoordinator,
         target: LockTarget,
         relock_delay: int,
+        calls: ButterflyMXCallCoordinator,
     ) -> None:
         """Initialize the lock."""
         super().__init__(coordinator)
         self._target = target
         self._relock_delay = relock_delay
+        self._calls = calls
         self._attr_unique_id = f"{DOMAIN}_{target.unique_key}"
         self._attr_device_info = door_device_info(target)
         self._attr_is_locked = True
@@ -151,6 +160,39 @@ class ButterflyMXLock(ButterflyMXTopologyEntity, LockEntity):
             self._attr_is_locked = False
             self.async_write_ha_state()
             self._schedule_relock()
+            await self._async_tell_the_panel()
+
+    async def _async_tell_the_panel(self) -> None:
+        """If a visitor is calling right now, tell the panel they were let in.
+
+        Opening a door and answering a call are two different things to
+        ButterflyMX, and v4 only does the first.  Without this the panel carries
+        on dialling and rolls over to a phone call, even though the visitor is
+        already inside.  The official app sends the same command when you open
+        the door from its notification.
+
+        Never fatal.  The door has already opened by this point, which is what
+        was asked for, so a failure here is logged and nothing more.
+        """
+        call = self._calls.live_call_for_tenant(self._target.tenant_id)
+        if call is None:
+            return
+        try:
+            handle = await self.coordinator.client.async_get_call_handle(call.id)
+            if handle is None:
+                return
+            await self.coordinator.client.async_notify_panel(
+                PANEL_COMMAND_OPEN_DOOR, handle
+            )
+        except ButterflyMXError as err:
+            _LOGGER.warning(
+                "Opened %s but could not tell the panel the call was handled, "
+                "so it may keep ringing: %s",
+                self._target.name,
+                err,
+            )
+        else:
+            _LOGGER.debug("Told panel %s that call %s was answered", handle.panel_id, call.id)
 
     def _schedule_relock(self) -> None:
         """Return the entity to ``locked`` after the strike times out."""

@@ -36,6 +36,8 @@ from .const import (
     DOMAIN,
     EVENT_CALL,
     EVENT_DOOR_RELEASE,
+    FINISHED_CALL_STATUSES,
+    LIVE_CALL_WINDOW,
     PASS_SCAN_INTERVAL,
     TOPOLOGY_SCAN_INTERVAL,
 )
@@ -386,6 +388,24 @@ class ButterflyMXCallCoordinator(DataUpdateCoordinator[dict[int, Call]]):
                 listener(tenant, call)
 
         return latest
+
+    def live_call_for_tenant(self, tenant_id: int) -> Call | None:
+        """Return the call ringing this tenancy now, if one is.
+
+        "Now" is deliberately narrow.  Telling the panel about a call that has
+        already rolled over to a phone call achieves nothing, and acting on a
+        stale record risks addressing a call that has moved on, so anything
+        older than the app's own ring timeout is ignored, as is anything whose
+        last known status says it is over.
+        """
+        call = (self.data or {}).get(tenant_id)
+        if call is None or call.logged_at is None:
+            return None
+        if dt_util.utcnow() - call.logged_at > timedelta(seconds=LIVE_CALL_WINDOW):
+            return None
+        if (call.status or "") in FINISHED_CALL_STATUSES:
+            return None
+        return call
 
     def _remember(self, call_id: int) -> None:
         """Record a call ID, evicting the oldest once the cache is full."""

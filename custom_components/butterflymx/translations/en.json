@@ -132,6 +132,10 @@
           "description": "The ID of the pass to delete, as shown in the Passes sensor's attributes or returned when it was created."
         }
       }
+    },
+    "decline_call": {
+      "name": "Decline call",
+      "description": "Stops a visitor being dialled without opening the door, the same thing Decline does in the ButterflyMX app. Without it the panel keeps ringing and eventually rolls the visitor over to a phone call. Only works while a call is actually ringing."
     }
   },
   "exceptions": {
@@ -149,6 +153,12 @@
     },
     "not_a_butterflymx_door": {
       "message": "{entity} is not a ButterflyMX door."
+    },
+    "not_a_doorbell": {
+      "message": "{entity} is not a ButterflyMX doorbell. Target the unit's Doorbell event instead."
+    },
+    "no_call_to_decline": {
+      "message": "There is no call ringing on {entity} right now."
     }
   }
 }

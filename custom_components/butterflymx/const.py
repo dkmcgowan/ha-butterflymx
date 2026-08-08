@@ -72,6 +72,34 @@ OOB_REDIRECT_URI: Final = "urn:ietf:wg:oauth:2.0:oob"
 
 API_VERSION_PATH: Final = "/v4"
 
+# Telling the panel a call has been handled is the one thing v4 cannot do, so
+# those two requests go to v3.  Everything else here is v4.
+#
+# v3 is not in the published documentation, but it is a versioned API on the
+# same host, it accepts the same OAuth token, and the two APIs are views of the
+# same records: a call has the same ID in both.  What v4's call log leaves out
+# is the call's `guid` and the panel that placed it, which is exactly what the
+# panel needs to hear back.  So v4 stays the source of truth and v3 is consulted
+# for those two fields and nothing else.
+V3_PATH: Final = "/v3"
+V3_CONTENT_TYPE: Final = "application/vnd.api+json"
+
+# The commands the official app sends when you act on a call from its
+# notification: open_door when you let someone in, call_ended when you decline.
+PANEL_COMMAND_OPEN_DOOR: Final = "open_door"
+PANEL_COMMAND_CALL_ENDED: Final = "call_ended"
+
+# How long after a call was logged it is still worth telling the panel about.
+# Matches the 40 seconds the ButterflyMX app rings before giving up.
+LIVE_CALL_WINDOW: Final = 40  # seconds
+
+# Call statuses that mean the call is over, so there is no panel left to tell.
+# Observed on a live account: initializing, canceled, timeout_online_signal,
+# opened_door.
+FINISHED_CALL_STATUSES: Final[frozenset[str]] = frozenset(
+    {"canceled", "timeout_online_signal", "opened_door", "declined", "answered"}
+)
+
 # Access token lifetime is documented as 24h; refresh this far ahead of expiry.
 TOKEN_EXPIRY_MARGIN: Final = 300  # seconds
 
@@ -179,6 +207,7 @@ SERVICE_CREATE_DELIVERY_PASS: Final = "create_delivery_pass"
 SERVICE_CREATE_VISITOR_PASS: Final = "create_visitor_pass"
 SERVICE_LIST_PASSES: Final = "list_passes"
 SERVICE_REVOKE_PASS: Final = "revoke_pass"
+SERVICE_DECLINE_CALL: Final = "decline_call"
 
 ATTR_PASS_ID: Final = "pass_id"
 ATTR_DOORS: Final = "doors"

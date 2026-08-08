@@ -357,6 +357,40 @@ class Call:
 
 
 @dataclass(frozen=True, slots=True)
+class CallHandle:
+    """How the panel refers to a call, which is not how v4 refers to it.
+
+    v4 knows a call by an integer ID.  The panel wants the call's ``guid`` and
+    the ID of the panel that placed it, neither of which v4 returns.  Both come
+    from v3, where the same call carries the same integer ID, so this is a
+    lookup rather than a second source of truth.
+    """
+
+    call_id: int
+    guid: str
+    panel_id: int
+
+    @classmethod
+    def from_v3(cls, data: dict[str, Any]) -> CallHandle | None:
+        """Build a CallHandle from a v3 JSON:API call resource."""
+        call_id = _int_or_none(data.get("id"), field_name="v3.call.id")
+        attributes = data.get("attributes") or {}
+        guid = attributes.get("guid") if isinstance(attributes, dict) else None
+        panel = ((data.get("relationships") or {}).get("panel") or {}).get("data") or {}
+        panel_id = _int_or_none(panel.get("id"), field_name="v3.call.panel.id")
+        if call_id is None or not guid or panel_id is None:
+            _LOGGER.debug(
+                "v3 call record is missing what the panel is addressed by "
+                "(id=%s, guid=%s, panel=%s)",
+                call_id,
+                bool(guid),
+                panel_id,
+            )
+            return None
+        return cls(call_id=call_id, guid=str(guid), panel_id=panel_id)
+
+
+@dataclass(frozen=True, slots=True)
 class AccessLogEntry:
     """A door that was opened, and how."""
 

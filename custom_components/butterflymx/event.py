@@ -10,13 +10,23 @@ from __future__ import annotations
 from typing import ClassVar
 
 from homeassistant.components.event import EventDeviceClass, EventEntity
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant, ServiceCall, callback
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.helpers import entity_platform
+from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import ButterflyMXConfigEntry
-from .const import DOMAIN, EVENT_TYPE_DOOR_RELEASE, EVENT_TYPE_RING
+from .const import (
+    DOMAIN,
+    EVENT_TYPE_DOOR_RELEASE,
+    EVENT_TYPE_RING,
+    PANEL_COMMAND_CALL_ENDED,
+    SERVICE_DECLINE_CALL,
+)
 from .coordinator import ButterflyMXAccessLogCoordinator, ButterflyMXCallCoordinator
 from .entity import ButterflyMXAccessLogEntity, ButterflyMXCallEntity
+from .exceptions import ButterflyMXError
 from .models import AccessLogEntry, Call, Tenant
 
 
@@ -49,6 +59,47 @@ async def async_setup_entry(
 
     _async_add_new_entities()
     entry.async_on_unload(topology_coordinator.async_add_listener(_async_add_new_entities))
+
+    # Declining is targeted at the doorbell that is ringing, so it lives here.
+    entity_platform.async_get_current_platform().async_register_entity_service(
+        SERVICE_DECLINE_CALL, None, _async_decline_call
+    )
+
+
+async def _async_decline_call(entity: Entity, call: ServiceCall) -> None:
+    """Stop a visitor being dialled without opening the door.
+
+    ButterflyMX has no "decline" in v4, so this is the same command the official
+    app sends from its own notification.  Without it the panel keeps ringing and
+    eventually rolls the visitor over to a phone call.
+    """
+    if not isinstance(entity, ButterflyMXDoorbellEvent):
+        raise ServiceValidationError(
+            translation_domain=DOMAIN,
+            translation_key="not_a_doorbell",
+            translation_placeholders={"entity": entity.entity_id},
+        )
+
+    live = entity.coordinator.live_call_for_tenant(entity.tenant.id)
+    if live is None:
+        raise ServiceValidationError(
+            translation_domain=DOMAIN,
+            translation_key="no_call_to_decline",
+            translation_placeholders={"entity": entity.entity_id},
+        )
+
+    client = entity.coordinator.client
+    try:
+        handle = await client.async_get_call_handle(live.id)
+        if handle is None:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="no_call_to_decline",
+                translation_placeholders={"entity": entity.entity_id},
+            )
+        await client.async_notify_panel(PANEL_COMMAND_CALL_ENDED, handle)
+    except ButterflyMXError as err:
+        raise HomeAssistantError(f"Could not decline the call: {err}") from err
 
 
 class ButterflyMXDoorbellEvent(ButterflyMXCallEntity, EventEntity):
