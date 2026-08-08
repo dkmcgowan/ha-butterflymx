@@ -26,7 +26,7 @@ Once set up, these appear in Home Assistant automatically. You do not configure
 them by hand.
 
 `<door>` below is the name ButterflyMX already gives that door, and `<unit>` is
-your unit — so a door called "Front Entrance" in an apartment 4B becomes
+your unit. A door called "Front Entrance" in an apartment 4B becomes
 `lock.front_entrance` and `event.unit_4b_doorbell`. Yours will read differently.
 
 | Entity | What it is |
@@ -36,18 +36,18 @@ your unit — so a door called "Front Entrance" in an apartment 4B becomes
 | `image.<unit>_last_call_snapshot` | The photo the intercom took of your most recent visitor. |
 | `sensor.<unit>_last_call` | When the last call happened, and who or what it came from. |
 | `event.<unit>_door_opened` | Fires whenever one of your doors is opened, however it happened: a PIN at the keypad, a fob, someone answering the intercom in the app, or Home Assistant. |
-| `sensor.<unit>_last_door_opened` | When a door was last opened, which one, and how — `PIN`, `Fob`, `App call` or `API`. |
+| `sensor.<unit>_last_door_opened` | When a door was last opened, which one, and how: `PIN`, `Fob`, `App call` or `API`. |
 | `sensor.<unit>_passes` | How many visitor and delivery codes are currently valid, and what they are for. See [Visitor and delivery passes](#visitor-and-delivery-passes). |
 
-**The examples below use these placeholders too.** Copying one means replacing
-`<door>` and `<unit>` with your own — the quickest way to find them is
-**Settings → Devices & services → ButterflyMX → entities**, or start typing in
-any entity picker.
+The examples below use the same placeholders, so copying one means replacing
+`<door>` and `<unit>` with your own. To find them, look under **Settings →
+Devices & services → ButterflyMX → entities**, or start typing in any entity
+picker.
 
 The door entities only ever cover your own tenancy. ButterflyMX scopes the
 access log to the signed-in resident, so you see your own comings and goings and
-not the neighbours'. That applies to whoever else lives with you as well — if
-you each have your own ButterflyMX login, see
+not the neighbours'. That applies to whoever else lives with you as well. If you
+each have your own ButterflyMX login, see
 [Two residents, two logins](#two-residents-two-logins).
 
 ## Before you start
@@ -171,11 +171,11 @@ Change `door:` at the top to whichever lock you want the button to open.
 dropped while the automation is still waiting.
 
 **"Ignore" only dismisses the notification.** ButterflyMX has no endpoint for
-answering or declining a call — the API can list calls and open doors, and that
-is all — so nothing here can hang up on a visitor or stop their intercom from
-ringing. They give up, or you answer in the ButterflyMX app. The button exists
-so the notification has an obvious way out; letting the two-minute timeout
-expire does exactly the same thing.
+answering or declining a call. The API can list calls and open doors, and that
+is all, so nothing here can hang up on a visitor or stop their intercom
+ringing. They give up, or you answer in the ButterflyMX app. The button is there
+so the notification has an obvious way out. Letting the two-minute timeout
+expire does the same thing.
 
 The photo needs no special setup: `image_url` points at a plain web address
 your phone can load directly, unlike a camera snapshot that would need Home
@@ -212,14 +212,14 @@ Both come back as a six-digit PIN plus a QR code your visitor can scan.
 ### Where the codes live
 
 **The PIN and QR link are returned to whatever called the action, and are not
-stored in Home Assistant.** They are not in the sensor, not in its attributes,
-and so not in your history database, your logbook or a diagnostics download. A
-PIN opens your building's front door, and Home Assistant keeps state history for
-weeks by default, which is no place to leave one.
+stored in Home Assistant.** They are not in the sensor or its attributes, so
+they never reach your history database, your logbook or a diagnostics download.
+A PIN opens your building's front door, and Home Assistant keeps state history
+for weeks by default.
 
-You can always read a code back with `butterflymx.list_passes`, and the
-ButterflyMX app shows every pass too. So nothing is lost — the code just has to
-be asked for rather than sitting in a database.
+You can read a code back at any time with `butterflymx.list_passes`, and the
+ButterflyMX app shows every pass too. The code just has to be asked for rather
+than sitting in a database.
 
 ### Creating a delivery code
 
@@ -266,8 +266,8 @@ Everything but `name` is optional. Leave the times out and it starts now and
 runs for four hours; leave `doors` out and it opens all of them.
 
 Under `visitor['sensor.<unit>_passes']` you get `pass_id`, the window, and a
-`keys` list with `pin_code`, `qr_code_url` and `instructions_url` — the last
-being a page you can send someone that explains how to use the code.
+`keys` list with `pin_code`, `qr_code_url` and `instructions_url`. That last one
+is a page you can send someone explaining how to use the code.
 
 ### Seeing and revoking passes
 
@@ -320,14 +320,14 @@ automation:
                 pass_id: "{{ repeat.item }}"
 ```
 
-### One thing these deliberately do not do
+### Sending a code to someone
 
-ButterflyMX can email or text a code to a recipient for you when a pass is
-created. That is not offered here. An action that mails a working door code to
-whatever address it is handed is one typo away from letting a stranger into your
-building, and an automation makes typos at three in the morning without anyone
-watching. The response gives you the PIN and the QR link; send them yourself,
-through a notify service you already trust.
+ButterflyMX can email or text a code for you when a pass is created. That is not
+offered here. An action that mails a working door code to whatever address it is
+handed is one typo away from letting a stranger into your building, and an
+automation will make that typo at three in the morning with nobody watching. The
+response gives you the PIN and the QR link, so send them yourself through a
+notify service you already trust.
 
 ## Two residents, two logins
 
@@ -336,16 +336,16 @@ Signing in to Home Assistant as yourself does not give you a different
 ButterflyMX than anyone else in the house sees. What the integration is signed
 in to ButterflyMX as, everybody gets.
 
-And **one ButterflyMX login only ever sees its own calls.** ButterflyMX scopes
-the call log to the signed-in resident, so if two of you have separate
-ButterflyMX accounts, one setup covers exactly one of you. There is no
-recipient field to branch on inside an automation, because every call your
-account can see was placed to you.
+One ButterflyMX login also only ever sees its own calls. ButterflyMX scopes the
+call log to the signed-in resident, so if two of you have separate ButterflyMX
+accounts, one setup covers exactly one of you. There is no recipient field to
+branch on inside an automation, because every call your account can see was
+placed to you.
 
 So if you want each person's calls to reach their own phone, **add the
 integration twice**, once per ButterflyMX login. Each doorbell entity is tied to
-one resident for good, so the entity that fired *is* the answer to who the call
-was for — there is no ID to inspect.
+one resident for good, so the entity that fired tells you who the call was for.
+There is no ID to inspect.
 
 How exact that is depends on your building's directory. If it lists residents
 separately, as in "David Unit 4B" and "Blair Unit 4B", a visitor picks a name
@@ -354,7 +354,7 @@ visitor rings the unit and both doorbells fire for the same person at the door,
 which means two notifications unless you handle it.
 
 This example uses real entity IDs rather than the placeholders above, because
-it only works once you have renamed the two doorbells to tell them apart — see
+it only works once you have renamed the two doorbells to tell them apart. See
 the second point below.
 
 ```yaml
@@ -392,10 +392,10 @@ automation:
 Three things to expect when you set up the second one:
 
 - **Each login gets its own copy of everything, doors included.** You will have
-  two lock entities for one physical door, the second suffixed `_2`. That is
-  deliberate, not a bug: a door release is performed *as* a resident, and the
-  ButterflyMX access log records who opened it. Opening the door from your
-  lock is logged as you, and from your partner's is logged as them.
+  two lock entities for one physical door, the second suffixed `_2`. That is on
+  purpose: a door release is performed *as* a resident, and the ButterflyMX
+  access log records who opened it. Opening the door from your lock is logged as
+  you, and from your partner's as them.
 - **If you share a unit, the two sets arrive with nearly identical names**,
   since both are "Unit 4B". Rename them to something you can tell apart before
   you write any automations, as the example above assumes.
@@ -410,9 +410,9 @@ Before doing any of this, check whether you need it. If you share a unit,
 buzzing it may already reach whichever account is set up, and one entry is
 simpler than two.
 
-> Not yet tried on a live instance. Two entries is a supported arrangement and
-> the account scoping above was checked against a real account, but nobody has
-> run two side by side yet. If it misbehaves, please open an issue.
+One caveat: nobody has run two entries side by side yet. The account scoping
+described above was checked against a real account, but the two-entry setup
+itself has not been tried. If it misbehaves, please open an issue.
 
 ## Settings
 
@@ -437,9 +437,9 @@ Home Assistant has no external address configured, the setting says so and
 there is no point enabling it.
 
 Polling does not stop when push is on, it just slows down. A call delivered
-while Home Assistant happens to be restarting is gone for good — ButterflyMX
-does not send it again — so a slow check stays running to catch anything push
-misses.
+while Home Assistant happens to be restarting is gone for good, because
+ButterflyMX does not send it again, so a slow check stays running to catch
+anything push misses.
 
 **If you turn it on and doorbells stop arriving**, push is not reaching you.
 Turn the setting back off, confirm the doorbell works again on polling alone,
@@ -454,9 +454,9 @@ No. It signs in as you and is limited to exactly what your account can already
 do: the doors you can open, and calls to your own unit.
 
 **Does it manage residents, keys or accounts?**
-No, and that is deliberate. It does not add or remove residents, units, access
-groups or key fobs. It opens doors and tells you when someone is at one. Anything
-administrative belongs in ButterflyMX's own tools.
+No. It does not add or remove residents, units, access groups or key fobs. It
+opens doors and tells you when someone is at one. Anything administrative
+belongs in ButterflyMX's own tools.
 
 **Do I need to expose Home Assistant to the internet?**
 No. It checks for new calls on a timer by default and works entirely from inside
@@ -522,9 +522,10 @@ ruff check custom_components tests scripts
 pytest
 ```
 
-The suite uses the Home Assistant test harness, which needs Linux or macOS.
-Home Assistant imports `fcntl`, so it will not run on Windows. CI runs it on
-every push.
+The suite needs Linux or macOS. The test harness imports `homeassistant.runner`,
+which imports `fcntl` at the top level, and there is no `fcntl` on Windows, so
+collection fails before any test runs. `ruff` works everywhere. CI runs the
+suite on Ubuntu on every push.
 
 ### Checking the API by hand
 
@@ -552,8 +553,8 @@ an actual door.
 
 Install it the way everyone else does: add your fork or branch to HACS as a
 custom repository, per [Through HACS](#through-hacs) above. That exercises the
-packaging as well as the code — `hacs.json`, the manifest version, the brand
-images — which copying files over SSH quietly skips.
+packaging as well as the code, which means `hacs.json`, the manifest version and
+the brand images all get checked.
 
 Bump `version` in `manifest.json` before you push, or HACS will not offer the
 update. A full Home Assistant restart is needed for Python changes; reloading
@@ -568,24 +569,24 @@ refreshes a few minutes before expiry and stores both halves of the new pair,
 because ButterflyMX rotates the refresh token every time. A rejected refresh
 raises a re-authentication flow.
 
-There is no client-side request throttling, deliberately. ButterflyMX publishes
-no rate limits and returns no rate-limit headers, requests are issued one at a
-time rather than in parallel, and pacing them only added delay. What remains is
-what matters when something goes wrong: exponential backoff with jitter on `429`
-and `5xx`, honoring `Retry-After`. Door releases are never retried, because a
-retry could open a door twice, and repeated releases of the same door within
-3 seconds are dropped. Building topology is refreshed hourly.
+There is no client-side request throttling. ButterflyMX publishes no rate limits
+and returns no rate-limit headers, requests go out one at a time rather than in
+parallel, and pacing them only added delay. What is left is the part that
+matters when something goes wrong: exponential backoff with jitter on `429` and
+`5xx`, honoring `Retry-After`. Door releases are never retried, since a retry
+could open a door twice, and repeated releases of the same door within 3 seconds
+are dropped. Building topology is refreshed hourly.
 
 Calls are read from the call log and door openings from the access log, always.
-When webhook push is on, a delivery does not carry either: it only tells the
-integration to read the logs immediately. A delivery has no call ID the REST API recognises, no timestamp,
-and nothing saying whether anyone answered, so using it as data would mean
-ringing the doorbell twice for one visitor and knowing less about it. The logs
-are the single source of truth and push just makes them prompt.
+When webhook push is on, a delivery carries neither: it only tells the
+integration to read the logs immediately. A delivery has no call ID the REST API
+recognises, no timestamp, and nothing saying whether anyone answered, so reading
+it as data would mean ringing the doorbell twice for one visitor and knowing
+less about them. Everything comes from the logs; push only makes them prompt.
 
 The access log is polled more slowly than the call log. A visitor at the door is
-a call and needs to be immediate; a door having been opened is worth knowing but
-does not need checking every few seconds.
+a call and has to be immediate. A door having been opened is useful to know
+about, but not every few seconds.
 
 Issues and pull requests are welcome.
 
