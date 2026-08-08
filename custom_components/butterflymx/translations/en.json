@@ -40,7 +40,6 @@
         "description": "Push is worth turning on if you can. It makes the doorbell arrive the instant someone calls, rather than up to one polling interval later.\n\nIt needs Home Assistant reachable from the internet. Turning it on registers this URL with ButterflyMX:\n\n{webhook_url}\n\nCheck that address works from outside your network first. Polling does not stop when push is on, it slows to a background check: a call delivered while Home Assistant is restarting is gone for good, so the slow poll stays on to catch anything push misses. If doorbells stop arriving, turn push back off and confirm they return.",
         "data": {
           "call_scan_interval": "Call polling interval",
-          "relock_delay": "Show door as unlocked for, when ButterflyMX does not say",
           "enable_webhook": "Let ButterflyMX push calls, recommended (needs an externally reachable Home Assistant)"
         }
       }

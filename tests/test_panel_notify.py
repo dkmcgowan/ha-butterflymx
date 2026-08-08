@@ -24,7 +24,6 @@ import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.butterflymx.const import (
-    CONF_RELOCK_DELAY,
     DOMAIN,
     SERVICE_DECLINE_CALL,
 )
@@ -134,7 +133,6 @@ async def test_opening_the_door_tells_the_panel(
     mock.get(V3_CALLS, json={"data": [v3_call()]})
     mock.post(f"{API_URL}/v3/notifications/open_door", status=204)
     config_entry.add_to_hass(hass)
-    hass.config_entries.async_update_entry(config_entry, options={CONF_RELOCK_DELAY: 0})
     assert await hass.config_entries.async_setup(config_entry.entry_id)
     await hass.async_block_till_done()
 
@@ -169,7 +167,6 @@ async def test_opening_the_door_with_no_call_says_nothing(
         f"{API_URL}/v4/door_release_requests", status=201, json={"data": {"id": 1}}
     )
     config_entry.add_to_hass(hass)
-    hass.config_entries.async_update_entry(config_entry, options={CONF_RELOCK_DELAY: 0})
     assert await hass.config_entries.async_setup(config_entry.entry_id)
     await hass.async_block_till_done()
 
@@ -195,7 +192,6 @@ async def test_a_call_that_has_already_ended_is_not_notified(
     mock.get(V3_CALLS, json={"data": [v3_call(status="canceled")]})
     mock.post(f"{API_URL}/v3/notifications/open_door", status=204)
     config_entry.add_to_hass(hass)
-    hass.config_entries.async_update_entry(config_entry, options={CONF_RELOCK_DELAY: 0})
     assert await hass.config_entries.async_setup(config_entry.entry_id)
     await hass.async_block_till_done()
 
@@ -222,7 +218,6 @@ async def test_an_old_call_is_not_even_asked_about(
         f"{API_URL}/v4/door_release_requests", status=201, json={"data": {"id": 1}}
     )
     config_entry.add_to_hass(hass)
-    hass.config_entries.async_update_entry(config_entry, options={CONF_RELOCK_DELAY: 0})
     assert await hass.config_entries.async_setup(config_entry.entry_id)
     await hass.async_block_till_done()
 
@@ -246,7 +241,6 @@ async def test_a_panel_that_cannot_be_told_does_not_fail_the_unlock(
     )
     mock.get(V3_CALLS, status=500)
     config_entry.add_to_hass(hass)
-    hass.config_entries.async_update_entry(config_entry, options={CONF_RELOCK_DELAY: 0})
     assert await hass.config_entries.async_setup(config_entry.entry_id)
     await hass.async_block_till_done()
 
@@ -269,7 +263,6 @@ async def test_declining_ends_the_call(
     mock.get(V3_CALLS, json={"data": [v3_call()]})
     mock.post(f"{API_URL}/v3/notifications/call_ended", status=204)
     config_entry.add_to_hass(hass)
-    hass.config_entries.async_update_entry(config_entry, options={CONF_RELOCK_DELAY: 0})
     assert await hass.config_entries.async_setup(config_entry.entry_id)
     await hass.async_block_till_done()
 
@@ -295,7 +288,6 @@ async def test_declining_nothing_is_refused(
     """Better to say so than to silently address a call that ended."""
     register_topology(aioclient_mock)
     config_entry.add_to_hass(hass)
-    hass.config_entries.async_update_entry(config_entry, options={CONF_RELOCK_DELAY: 0})
     assert await hass.config_entries.async_setup(config_entry.entry_id)
     await hass.async_block_till_done()
 
@@ -314,7 +306,6 @@ async def test_declining_on_the_wrong_event_entity_is_refused(
     """The door-opened event is on the same platform and receives the call too."""
     register_topology(aioclient_mock)
     config_entry.add_to_hass(hass)
-    hass.config_entries.async_update_entry(config_entry, options={CONF_RELOCK_DELAY: 0})
     assert await hass.config_entries.async_setup(config_entry.entry_id)
     await hass.async_block_till_done()
 

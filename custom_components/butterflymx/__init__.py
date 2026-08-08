@@ -21,10 +21,8 @@ from .const import (
     CONF_CALL_SCAN_INTERVAL,
     CONF_CLIENT_ID,
     CONF_ENABLE_WEBHOOK,
-    CONF_RELOCK_DELAY,
     CONF_TOKEN,
     DEFAULT_CALL_SCAN_INTERVAL,
-    DEFAULT_RELOCK_DELAY,
     WEBHOOK_FALLBACK_SCAN_INTERVAL,
 )
 from .coordinator import (
@@ -55,7 +53,6 @@ class ButterflyMXRuntimeData:
     calls: ButterflyMXCallCoordinator
     access_log: ButterflyMXAccessLogCoordinator
     passes: ButterflyMXPassCoordinator
-    relock_delay: int
     options_snapshot: dict[str, Any] = field(default_factory=dict)
     webhook: ButterflyMXWebhookManager | None = None
 
@@ -117,7 +114,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ButterflyMXConfigEntry) 
         calls=calls,
         access_log=access_log,
         passes=passes,
-        relock_delay=entry.options.get(CONF_RELOCK_DELAY, DEFAULT_RELOCK_DELAY),
         options_snapshot=dict(entry.options),
     )
 

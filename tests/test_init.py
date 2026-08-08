@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import timedelta
 from unittest.mock import patch
 
+from freezegun.api import FrozenDateTimeFactory
 from homeassistant.components.lock import (
     DOMAIN as LOCK_DOMAIN,
     SERVICE_OPEN,
@@ -15,11 +16,13 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import ATTR_ENTITY_ID
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr, entity_registry as er
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
+    async_fire_time_changed,
+)
 
 from custom_components.butterflymx.const import (
     CONF_ENABLE_WEBHOOK,
-    CONF_RELOCK_DELAY,
     CONF_TOKEN,
     DEFAULT_CALL_SCAN_INTERVAL,
     DOMAIN,
@@ -29,6 +32,7 @@ from custom_components.butterflymx.const import (
 from custom_components.butterflymx.webhook import ButterflyMXWebhookManager
 
 from .conftest import (
+    ACCESS_POINT_OPEN_DURATION,
     ACCOUNTS_URL,
     API_URL,
     BUILDING_ID,
@@ -189,7 +193,10 @@ async def test_open_and_unlock_report_the_same_state(
 
 
 async def test_the_door_returns_to_locked_on_its_own(
-    hass: HomeAssistant, mock_topology, config_entry: MockConfigEntry
+    hass: HomeAssistant,
+    mock_topology,
+    config_entry: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
 ) -> None:
     """A released door must go back to locked without anything asking it to.
 
@@ -197,21 +204,30 @@ async def test_the_door_returns_to_locked_on_its_own(
     shuts and latches again. Nothing reports that back, so the entity has to
     return to locked by itself or it would sit there claiming to be unlocked and
     the next release would look like a no-op.
+
+    It has to hold until the door has really re-engaged, so the wait is checked
+    from both ends. Moving the clock rather than waiting is why the timer is
+    scheduled on Home Assistant's clock instead of sleeping.
     """
     mock_topology.post(
         f"{API_URL}/v4/door_release_requests", status=201, json={"data": {"id": 1}}
     )
-    # Relock immediately instead of waiting out the real delay.
-    config_entry.add_to_hass(hass)
-    hass.config_entries.async_update_entry(config_entry, options={CONF_RELOCK_DELAY: 0})
-    assert await hass.config_entries.async_setup(config_entry.entry_id)
-    await hass.async_block_till_done()
+    await _setup(hass, config_entry)
 
     await hass.services.async_call(
         LOCK_DOMAIN, SERVICE_UNLOCK, {ATTR_ENTITY_ID: LOCK_ENTITY}, blocking=True
     )
-    await hass.async_block_till_done()
+    assert hass.states.get(LOCK_ENTITY).state == LockState.UNLOCKED
 
+    # One second short of this door's twelve, so still open.
+    freezer.tick(timedelta(seconds=ACCESS_POINT_OPEN_DURATION - 1))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert hass.states.get(LOCK_ENTITY).state == LockState.UNLOCKED
+
+    freezer.tick(timedelta(seconds=2))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
     assert hass.states.get(LOCK_ENTITY).state == LockState.LOCKED
 
 

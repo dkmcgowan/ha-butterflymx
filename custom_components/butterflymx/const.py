@@ -19,7 +19,6 @@ CONF_TOKEN: Final = "token"
 CONF_AUTH_CODE: Final = "auth_code"
 
 CONF_CALL_SCAN_INTERVAL: Final = "call_scan_interval"
-CONF_RELOCK_DELAY: Final = "relock_delay"
 CONF_ENABLE_WEBHOOK: Final = "enable_webhook"
 CONF_WEBHOOK_ID: Final = "webhook_id"
 CONF_WEBHOOK_INTEGRATION_IDS: Final = "webhook_integration_ids"
@@ -169,11 +168,12 @@ CALL_LOOKBACK: Final = 300  # seconds
 # announced are filtered out by ID.
 CALL_POLL_OVERLAP: Final = 30  # seconds
 
-# Only a fallback, used for doors whose real duration could not be read.  When
-# ButterflyMX reports one, that wins: see GRAPHQL_PATH above.
-DEFAULT_RELOCK_DELAY: Final = 5  # seconds
-MIN_RELOCK_DELAY: Final = 1
-MAX_RELOCK_DELAY: Final = 300
+# What to show a door as unlocked for when its real duration could not be read,
+# which means either a door that is not an access point or a failed GraphQL
+# read.  Deliberately not a setting.  Nobody knows their own door's hold time,
+# which is the entire reason we go and ask, and the value is cosmetic: it moves
+# when the lock icon flips back and nothing else.
+FALLBACK_OPEN_SECONDS: Final = 5
 
 # --- Device types -------------------------------------------------------------
 

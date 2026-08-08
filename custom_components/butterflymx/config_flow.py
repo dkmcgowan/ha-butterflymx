@@ -45,19 +45,15 @@ from .const import (
     CONF_ENABLE_WEBHOOK,
     CONF_ENVIRONMENT,
     CONF_REDIRECT_URI,
-    CONF_RELOCK_DELAY,
     CONF_TOKEN,
     CONF_WEBHOOK_ID,
     DEFAULT_CALL_SCAN_INTERVAL,
     DEFAULT_CLIENT_ID,
-    DEFAULT_RELOCK_DELAY,
     DOMAIN,
     ENV_PRODUCTION,
     ENVIRONMENTS,
     MAX_CALL_SCAN_INTERVAL,
-    MAX_RELOCK_DELAY,
     MIN_CALL_SCAN_INTERVAL,
-    MIN_RELOCK_DELAY,
     OOB_REDIRECT_URI,
 )
 from .exceptions import ButterflyMXAuthError, ButterflyMXConnectionError, ButterflyMXError
@@ -314,21 +310,6 @@ class ButterflyMXOptionsFlow(OptionsFlow):
                     ),
                     # A number selector hands back a float, and these are whole
                     # seconds, so keep 10 out of the entry as 10.0.
-                    vol.Coerce(int),
-                ),
-                vol.Required(
-                    CONF_RELOCK_DELAY,
-                    default=options.get(CONF_RELOCK_DELAY, DEFAULT_RELOCK_DELAY),
-                ): vol.All(
-                    selector.NumberSelector(
-                        selector.NumberSelectorConfig(
-                            min=MIN_RELOCK_DELAY,
-                            max=MAX_RELOCK_DELAY,
-                            step=1,
-                            unit_of_measurement="s",
-                            mode=selector.NumberSelectorMode.BOX,
-                        )
-                    ),
                     vol.Coerce(int),
                 ),
                 vol.Required(

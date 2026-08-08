@@ -98,8 +98,8 @@ def parse_access_point_details(payload: Any) -> dict[int, AccessPointDetail]:
         # arrive are still worth having; the rest keep their fallback.
         _LOGGER.warning(
             "ButterflyMX has more access points than one page returned, so %d "
-            "door(s) have their real open duration and any others fall back to "
-            "the configured relock delay",
+            "door(s) know how long they stay open and any others fall back to "
+            "a fixed guess",
             len(details),
         )
 

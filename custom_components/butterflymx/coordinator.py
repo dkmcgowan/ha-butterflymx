@@ -236,7 +236,7 @@ class ButterflyMXTopologyCoordinator(DataUpdateCoordinator[ButterflyMXTopology])
 
             # How long each door stays open.  Also not worth failing over: the
             # locks work either way, they just fall back to the configured
-            # relock delay and report themselves locked at the wrong moment.
+            # fallback and report themselves locked at the wrong moment.
             access_point_details: dict[int, AccessPointDetail] = {}
             try:
                 access_point_details = (
@@ -247,7 +247,7 @@ class ButterflyMXTopologyCoordinator(DataUpdateCoordinator[ButterflyMXTopology])
             except ButterflyMXError as err:
                 _LOGGER.debug(
                     "Could not read how long doors stay open: %s. Locks will use "
-                    "the configured relock delay instead",
+                    "a fallback instead",
                     err,
                 )
 

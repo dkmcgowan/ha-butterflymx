@@ -2,19 +2,26 @@
 
 ButterflyMX configures this per access point and only reports it over GraphQL.
 Getting it wrong is not cosmetic: on a real building the three doors on one
-panel were set to 4, 9 and 14 seconds, so a single relock delay is wrong for at
-least two of them.
+panel were set to 4, 9 and 14 seconds, so one fixed number is wrong for at least
+two of them.
 """
 
 from __future__ import annotations
 
+from datetime import timedelta
+
+from freezegun.api import FrozenDateTimeFactory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
+    async_fire_time_changed,
+)
 
 from custom_components.butterflymx.api import ButterflyMXClient
 from custom_components.butterflymx.auth import ButterflyMXAuth
+from custom_components.butterflymx.const import FALLBACK_OPEN_SECONDS
 from custom_components.butterflymx.exceptions import ButterflyMXResponseError
 from custom_components.butterflymx.graphql import (
     ACCESS_POINT_DETAIL_QUERY,
@@ -132,48 +139,78 @@ async def test_the_query_is_posted_to_the_graphql_endpoint(
 # --- The lock entity ----------------------------------------------------------
 
 
-async def _setup(
-    hass: HomeAssistant, entry: MockConfigEntry, relock_delay: int
-) -> None:
+async def _setup(hass: HomeAssistant, entry: MockConfigEntry) -> None:
     entry.add_to_hass(hass)
-    hass.config_entries.async_update_entry(
-        entry, options={**entry.options, "relock_delay": relock_delay}
-    )
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
 
-async def test_the_door_beats_the_option(
-    hass: HomeAssistant, aioclient_mock, config_entry: MockConfigEntry
+async def test_the_door_reports_its_own_duration(
+    hass: HomeAssistant,
+    aioclient_mock,
+    config_entry: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
 ) -> None:
-    """A door that reports its own duration ignores the configured delay.
-
-    The relock timer reads the same ``_open_seconds`` this attribute exposes,
-    so asserting the attribute asserts the timer.  It is not asserted by
-    waiting: the timer is a real ``asyncio.sleep``, which a frozen clock does
-    not move, so a timing test here would sleep for real.
-    """
+    """A door stays unlocked for as long as ButterflyMX says, not a fixed guess."""
     register_topology(aioclient_mock)
-    await _setup(hass, config_entry, relock_delay=1)
+    aioclient_mock.post(
+        f"{API_URL}/v4/door_release_requests", status=201, json={"data": {"id": 1}}
+    )
+    await _setup(hass, config_entry)
 
     state = hass.states.get(LOCK_ENTITY)
-    assert state is not None
     assert state.attributes["open_duration"] == ACCESS_POINT_OPEN_DURATION
     assert state.attributes["online"] is True
 
+    await hass.services.async_call(
+        "lock", "open", {"entity_id": LOCK_ENTITY}, blocking=True
+    )
+    assert hass.states.get(LOCK_ENTITY).state == "unlocked"
 
-async def test_lock_falls_back_when_the_duration_cannot_be_read(
-    hass: HomeAssistant, aioclient_mock, config_entry: MockConfigEntry
+    # Past the fallback, nowhere near this door's twelve seconds.  Getting this
+    # wrong is the whole reason the duration is read at all.
+    freezer.tick(timedelta(seconds=FALLBACK_OPEN_SECONDS + 1))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert hass.states.get(LOCK_ENTITY).state == "unlocked"
+
+    freezer.tick(timedelta(seconds=ACCESS_POINT_OPEN_DURATION))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert hass.states.get(LOCK_ENTITY).state == "locked"
+
+
+async def test_a_door_with_no_duration_uses_the_fallback(
+    hass: HomeAssistant,
+    aioclient_mock,
+    config_entry: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
 ) -> None:
-    """A failed GraphQL read leaves the door usable on its configured delay."""
+    """A failed GraphQL read leaves the door working on a fixed guess.
+
+    There is no setting to fall back to, so this is the only path for a door
+    that is not an access point or a refresh where the query failed.
+    """
     register_topology(
         aioclient_mock,
         access_point_details={"errors": [{"message": "nope"}]},
     )
-    await _setup(hass, config_entry, relock_delay=7)
+    aioclient_mock.post(
+        f"{API_URL}/v4/door_release_requests", status=201, json={"data": {"id": 1}}
+    )
+    await _setup(hass, config_entry)
 
     state = hass.states.get(LOCK_ENTITY)
-    assert state is not None
     assert state.state == "locked"
-    assert state.attributes["open_duration"] == 7
+    assert state.attributes["open_duration"] == FALLBACK_OPEN_SECONDS
     assert state.attributes["online"] is None
+
+    await hass.services.async_call(
+        "lock", "open", {"entity_id": LOCK_ENTITY}, blocking=True
+    )
+    assert hass.states.get(LOCK_ENTITY).state == "unlocked"
+
+    freezer.tick(timedelta(seconds=FALLBACK_OPEN_SECONDS + 1))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert hass.states.get(LOCK_ENTITY).state == "locked"

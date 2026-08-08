@@ -7,10 +7,10 @@ successful release, and returns to ``locked`` once the strike has re-engaged.
 ``assumed_state`` is set so the UI shows discrete open/close controls rather
 than a toggle that pretends to know the truth.
 
-How long "briefly" is comes from ButterflyMX rather than from a setting: each
-access point carries its own ``open_duration``, and it varies a lot between
-doors on one panel.  The configured relock delay is only the fallback for a
-door whose real duration could not be read.
+How long "briefly" is comes from ButterflyMX, not from a setting: each access
+point carries its own ``open_duration``, and it varies a lot between doors on
+one panel.  There is deliberately no option for it, because nobody knows their
+own door's hold time and asking them to guess is worse than asking the API.
 
 ``is_open`` is deliberately never reported.  Releasing the strike makes a door
 openable, but whether anyone actually pushed it is not something this API can
@@ -22,16 +22,23 @@ so the UI can offer either control.
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 import logging
 from typing import Any
 
 from homeassistant.components.lock import LockEntity, LockEntityFeature
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.helpers.event import async_call_later
 
 from . import ButterflyMXConfigEntry
-from .const import DOMAIN, DOOR_RELEASE_COOLDOWN, PANEL_COMMAND_OPEN_DOOR
+from .const import (
+    DOMAIN,
+    DOOR_RELEASE_COOLDOWN,
+    FALLBACK_OPEN_SECONDS,
+    PANEL_COMMAND_OPEN_DOOR,
+)
 from .coordinator import (
     ButterflyMXCallCoordinator,
     ButterflyMXTopologyCoordinator,
@@ -66,9 +73,7 @@ async def async_setup_entry(
                 continue
             created.add(target.unique_key)
             new_entities.append(
-                ButterflyMXLock(
-                    coordinator, target, runtime.relock_delay, runtime.calls
-                )
+                ButterflyMXLock(coordinator, target, runtime.calls)
             )
         if new_entities:
             async_add_entities(new_entities)
@@ -88,19 +93,17 @@ class ButterflyMXLock(ButterflyMXTopologyEntity, LockEntity):
         self,
         coordinator: ButterflyMXTopologyCoordinator,
         target: LockTarget,
-        relock_delay: int,
         calls: ButterflyMXCallCoordinator,
     ) -> None:
         """Initialize the lock."""
         super().__init__(coordinator)
         self._target = target
-        self._relock_delay = relock_delay
         self._calls = calls
         self._attr_unique_id = f"{DOMAIN}_{target.unique_key}"
         self._attr_device_info = door_device_info(target)
         self._attr_is_locked = True
         self._attr_is_unlocking = False
-        self._relock_task: asyncio.Task[None] | None = None
+        self._relock_cancel: CALLBACK_TYPE | None = None
         self._release_lock = asyncio.Lock()
         self._last_release: float = 0.0
 
@@ -117,14 +120,14 @@ class ButterflyMXLock(ButterflyMXTopologyEntity, LockEntity):
         """How long this door really stays open.
 
         ButterflyMX configures this per door, and the spread is wide: one panel
-        was measured at 4, 9 and 14 seconds across its three access points.  The
-        configured relock delay is the fallback for doors it could not be read
-        for, not a default to prefer.
+        was measured at 4, 9 and 14 seconds across its three access points.
+        ``FALLBACK_OPEN_SECONDS`` covers what is left: a door that is not an
+        access point, or a refresh where the query failed.
         """
         detail = self._detail
         if detail is not None and detail.open_duration:
             return detail.open_duration
-        return self._relock_delay
+        return FALLBACK_OPEN_SECONDS
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -236,25 +239,30 @@ class ButterflyMXLock(ButterflyMXTopologyEntity, LockEntity):
             _LOGGER.debug("Told panel %s that call %s was answered", handle.panel_id, call.id)
 
     def _schedule_relock(self) -> None:
-        """Return the entity to ``locked`` after the strike times out."""
-        self._cancel_relock()
-        seconds = self._open_seconds
+        """Return the entity to ``locked`` after the strike times out.
 
-        async def _relock() -> None:
-            # A cancelled timer means a newer release replaced this one, so let
-            # the cancellation propagate rather than reporting the door locked.
-            await asyncio.sleep(seconds)
+        On Home Assistant's clock rather than a sleeping task.  It is the same
+        wait either way in production, but a scheduled callback is cancellable
+        without touching task state, does not keep a coroutine alive for the
+        duration, and moves when the clock is moved, so a test can wait out a
+        fourteen-second door without waiting fourteen seconds.
+        """
+        self._cancel_relock()
+
+        @callback
+        def _relock(_now: datetime) -> None:
+            self._relock_cancel = None
             self._set_locked()
 
-        self._relock_task = self.hass.async_create_task(
-            _relock(), f"{DOMAIN} relock {self._target.unique_key}"
+        self._relock_cancel = async_call_later(
+            self.hass, self._open_seconds, _relock
         )
 
     def _cancel_relock(self) -> None:
         """Cancel a pending relock timer."""
-        if self._relock_task is not None and not self._relock_task.done():
-            self._relock_task.cancel()
-        self._relock_task = None
+        if self._relock_cancel is not None:
+            self._relock_cancel()
+            self._relock_cancel = None
 
     @callback
     def _set_locked(self) -> None:

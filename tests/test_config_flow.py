@@ -18,7 +18,6 @@ from custom_components.butterflymx.const import (
     CONF_CLIENT_ID,
     CONF_ENABLE_WEBHOOK,
     CONF_REDIRECT_URI,
-    CONF_RELOCK_DELAY,
     CONF_TOKEN,
     DOMAIN,
     OOB_REDIRECT_URI,
@@ -258,7 +257,6 @@ async def test_options_are_stored_as_whole_seconds(
         result["flow_id"],
         {
             CONF_CALL_SCAN_INTERVAL: 15,
-            CONF_RELOCK_DELAY: 7,
             CONF_ENABLE_WEBHOOK: False,
         },
     )
@@ -266,8 +264,6 @@ async def test_options_are_stored_as_whole_seconds(
     options = result["data"]
     assert options[CONF_CALL_SCAN_INTERVAL] == 15
     assert isinstance(options[CONF_CALL_SCAN_INTERVAL], int)
-    assert options[CONF_RELOCK_DELAY] == 7
-    assert isinstance(options[CONF_RELOCK_DELAY], int)
 
 
 async def test_duplicate_account_aborts(

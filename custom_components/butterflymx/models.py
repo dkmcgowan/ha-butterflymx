@@ -731,7 +731,7 @@ class ButterflyMXTopology:
     access_tools: list[AccessTool] = field(default_factory=list)
     #: Per-door configuration, keyed by access point ID.  Empty when the
     #: GraphQL read failed, which is not fatal: locks fall back to the
-    #: configured relock delay.
+    #: fallback.
     access_point_details: dict[int, AccessPointDetail] = field(default_factory=dict)
 
     def access_point_detail(
