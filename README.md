@@ -229,10 +229,6 @@ actions:
 Both `lock.open` and `lock.unlock` buzz the door. Add the lock to a dashboard, a
 wall tablet by the door, or a voice assistant.
 
-**Other ideas:** flash a light when someone buzzes while you have music on, log
-every visitor to a calendar, or announce the door on a speaker so you hear it
-away from your phone.
-
 ## Visitor and delivery passes
 
 The same two things you can create in the ButterflyMX app, with the same names:
@@ -243,19 +239,26 @@ The same two things you can create in the ButterflyMX app, with the same names:
   whichever doors you choose. Good for a cleaner, a dog walker, or family
   staying the weekend.
 
-Both come back as a six-digit PIN plus a QR code your visitor can scan.
-
 ### Where the codes live
 
-**The PIN and QR link are returned to whatever called the action, and are not
-stored in Home Assistant.** They are not in the sensor or its attributes, so
-they never reach your history database, your logbook or a diagnostics download.
-A PIN opens your building's front door, and Home Assistant keeps state history
-for weeks by default.
+Creating a pass, and `butterflymx.list_passes`, both return the same thing:
+`pass_id`, the window, and a `keys` list holding
 
-You can read a code back at any time with `butterflymx.list_passes`, and the
-ButterflyMX app shows every pass too. The code just has to be asked for rather
-than sitting in a database.
+- `pin_code`, six digits
+- `qr_code_url`, a PNG you can attach straight to a notification
+- `instructions_url`, a page explaining the pass to whoever you send it to
+
+The response is keyed by the entity you targeted, so it reads
+`response['sensor.<unit>_passes']`.
+
+**None of that is stored in Home Assistant.** The codes are not in the sensor or
+its attributes, so they never reach your history database, your logbook or a
+diagnostics download. A PIN opens your building's front door and Home Assistant
+keeps state history for weeks, which is a bad combination. Anyone holding the
+QR link can use it too: it needs no sign-in.
+
+Nothing is lost by that. `butterflymx.list_passes` gives you any code back
+whenever you want it, and the ButterflyMX app lists every pass as well.
 
 ### Creating a delivery code
 
@@ -273,14 +276,12 @@ actions:
     data:
       title: "Delivery code"
       message: "PIN {{ pass.keys[0].pin_code }}"
+      data:
+        image: "{{ pass.keys[0].qr_code_url }}"
 ```
 
 The name is worth choosing well: it is what shows up in the ButterflyMX access
 log when the code gets used.
-
-The response is keyed by the entity you targeted, the same shape
-`weather.get_forecasts` returns. With one unit there is only ever the one key,
-which is why the example pulls it out into a variable first.
 
 ### Creating a visitor code
 
@@ -301,9 +302,7 @@ actions:
 Everything but `name` is optional. Leave the times out and it starts now and
 runs for four hours; leave `doors` out and it opens all of them.
 
-Under `visitor['sensor.<unit>_passes']` you get `pass_id`, the window, and a
-`keys` list with `pin_code`, `qr_code_url` and `instructions_url`. That last one
-is a page you can send someone explaining how to use the code.
+The response is the same shape as the delivery pass above.
 
 ### Seeing and revoking passes
 
@@ -357,12 +356,9 @@ actions:
 
 ### Sending a code to someone
 
-ButterflyMX can email or text a code for you when a pass is created. That is not
-offered here. An action that mails a working door code to whatever address it is
-handed is one typo away from letting a stranger into your building, and an
-automation will make that typo at three in the morning with nobody watching. The
-response gives you the PIN and the QR link, so send them yourself through a
-notify service you already trust.
+ButterflyMX can email or text a code for you. That is not offered here. Send it
+yourself with a Home Assistant automation, where you control who it goes to, or
+create the pass in the ButterflyMX app if you want their delivery.
 
 ## Two residents, two logins
 
