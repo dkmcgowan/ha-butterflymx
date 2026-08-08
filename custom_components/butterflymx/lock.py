@@ -174,12 +174,20 @@ class ButterflyMXLock(ButterflyMXTopologyEntity, LockEntity):
         Never fatal.  The door has already opened by this point, which is what
         was asked for, so a failure here is logged and nothing more.
         """
-        call = self._calls.live_call_for_tenant(self._target.tenant_id)
+        call = self._calls.recent_call_for_tenant(self._target.tenant_id)
         if call is None:
             return
         try:
             handle = await self.coordinator.client.async_get_call_handle(call.id)
             if handle is None:
+                return
+            if not handle.is_live:
+                # Already answered, declined, or rung out. Nothing to tell.
+                _LOGGER.debug(
+                    "Call %s is %s, so the panel needs no telling",
+                    call.id,
+                    handle.status,
+                )
                 return
             await self.coordinator.client.async_notify_panel(
                 PANEL_COMMAND_OPEN_DOOR, handle

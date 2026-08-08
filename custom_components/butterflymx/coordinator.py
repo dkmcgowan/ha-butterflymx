@@ -36,7 +36,6 @@ from .const import (
     DOMAIN,
     EVENT_CALL,
     EVENT_DOOR_RELEASE,
-    FINISHED_CALL_STATUSES,
     LIVE_CALL_WINDOW,
     PASS_SCAN_INTERVAL,
     TOPOLOGY_SCAN_INTERVAL,
@@ -389,21 +388,23 @@ class ButterflyMXCallCoordinator(DataUpdateCoordinator[dict[int, Call]]):
 
         return latest
 
-    def live_call_for_tenant(self, tenant_id: int) -> Call | None:
-        """Return the call ringing this tenancy now, if one is.
+    def recent_call_for_tenant(self, tenant_id: int) -> Call | None:
+        """Return this tenancy's last call if it is recent enough to be worth asking about.
 
-        "Now" is deliberately narrow.  Telling the panel about a call that has
-        already rolled over to a phone call achieves nothing, and acting on a
-        stale record risks addressing a call that has moved on, so anything
-        older than the app's own ring timeout is ignored, as is anything whose
-        last known status says it is over.
+        This is a cheap filter, not the answer.  Whether the call is still
+        ringing is decided by its live status, which only v3 knows; all this
+        does is avoid a pointless request to find that out on every door
+        opening, when almost none of them have a visitor attached.
+
+        The status on the record here cannot be used for the real decision.
+        The coordinator skips calls it has already seen, so this copy keeps the
+        status the call had when it first appeared, which for a ringing call is
+        ``initializing`` and stays that way.
         """
         call = (self.data or {}).get(tenant_id)
         if call is None or call.logged_at is None:
             return None
         if dt_util.utcnow() - call.logged_at > timedelta(seconds=LIVE_CALL_WINDOW):
-            return None
-        if (call.status or "") in FINISHED_CALL_STATUSES:
             return None
         return call
 

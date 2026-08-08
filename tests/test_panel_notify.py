@@ -42,7 +42,12 @@ PANEL_ID = 28516
 V3_CALLS = f"{API_URL}/v3/me/calls"
 
 
-def v3_call(call_id: int = CALL_ID, guid: str = GUID, panel: int = PANEL_ID) -> dict:
+def v3_call(
+    call_id: int = CALL_ID,
+    guid: str = GUID,
+    panel: int = PANEL_ID,
+    status: str = "initializing",
+) -> dict:
     """One call as v3 returns it: JSON:API, guid in attributes, panel related."""
     return {
         "id": str(call_id),
@@ -52,8 +57,8 @@ def v3_call(call_id: int = CALL_ID, guid: str = GUID, panel: int = PANEL_ID) -> 
             "call_type": "mobile",
             "notification_type": "visitor",
             "logged_at": "2026-08-04T12:00:00Z",
-            "status": "initializing",
-            "display_status": "Initializing",
+            "status": status,
+            "display_status": status.title(),
         },
         "relationships": {"panel": {"data": {"id": str(panel), "type": "panels"}}},
     }
@@ -66,7 +71,31 @@ def test_a_v3_call_yields_what_the_panel_is_addressed_by() -> None:
     """The guid and the panel are the two things v4 does not carry."""
     handle = CallHandle.from_v3(v3_call())
 
-    assert handle == CallHandle(call_id=CALL_ID, guid=GUID, panel_id=PANEL_ID)
+    assert handle == CallHandle(
+        call_id=CALL_ID, guid=GUID, panel_id=PANEL_ID, status="initializing"
+    )
+    assert handle.is_live
+
+
+@pytest.mark.parametrize(
+    ("status", "live"),
+    [
+        ("initializing", True),
+        ("canceled", False),
+        ("opened_door", False),
+        ("timeout_online_signal", False),
+    ],
+)
+def test_liveness_comes_from_the_status_v3_reports_now(status: str, live: bool) -> None:
+    """The only status worth trusting is the one read at the moment of asking.
+
+    The polled v4 record cannot answer this. The coordinator skips calls it has
+    already seen, so its copy keeps the status from first sight, and a ringing
+    call first appears as "initializing" and stays that way there forever.
+    """
+    handle = CallHandle.from_v3(v3_call(status=status))
+
+    assert handle is not None and handle.is_live is live
 
 
 @pytest.mark.parametrize(
@@ -151,13 +180,41 @@ async def test_opening_the_door_with_no_call_says_nothing(
     assert not [c for c in mock.mock_calls if "/v3/" in str(c[1])]
 
 
-async def test_a_stale_call_is_not_worth_telling_the_panel_about(
+async def test_a_call_that_has_already_ended_is_not_notified(
     hass: HomeAssistant, aioclient_mock, config_entry: MockConfigEntry, freezer
 ) -> None:
-    """After the panel has given up there is nothing left to tell.
+    """The real guard: v3 says the call is over, so there is nothing to tell.
 
-    The call is still the most recent one this tenancy saw, so without a time
-    window every later door opening would keep addressing it.
+    Recent enough to be asked about, but finished by the time we ask.
+    """
+    freezer.move_to("2026-08-04T12:00:10Z")
+    mock = register_topology(aioclient_mock, calls=[call_payload(call_id=CALL_ID)])
+    mock.post(
+        f"{API_URL}/v4/door_release_requests", status=201, json={"data": {"id": 1}}
+    )
+    mock.get(V3_CALLS, json={"data": [v3_call(status="canceled")]})
+    mock.post(f"{API_URL}/v3/notifications/open_door", status=204)
+    config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(config_entry, options={CONF_RELOCK_DELAY: 0})
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    await hass.services.async_call(
+        LOCK_DOMAIN, SERVICE_OPEN, {ATTR_ENTITY_ID: LOCK_ENTITY}, blocking=True
+    )
+
+    assert not [
+        c for c in mock.mock_calls if str(c[1]).endswith("/notifications/open_door")
+    ]
+
+
+async def test_an_old_call_is_not_even_asked_about(
+    hass: HomeAssistant, aioclient_mock, config_entry: MockConfigEntry, freezer
+) -> None:
+    """The cheap filter: no visitor for hours, so do not go asking v3.
+
+    Not a correctness guard, since the status check above is that. This only
+    keeps an ordinary door opening down to a single request.
     """
     freezer.move_to("2026-08-04T12:00:10Z")
     mock = register_topology(aioclient_mock, calls=[call_payload(call_id=CALL_ID)])

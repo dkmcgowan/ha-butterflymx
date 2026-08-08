@@ -15,6 +15,8 @@ from typing import Any, ClassVar
 
 from homeassistant.util import dt as dt_util
 
+from .const import FINISHED_CALL_STATUSES
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -369,6 +371,19 @@ class CallHandle:
     call_id: int
     guid: str
     panel_id: int
+    status: str | None = None
+
+    @property
+    def is_live(self) -> bool:
+        """Report whether this call is still ringing.
+
+        Read from v3 at the moment of asking, which is the only way to know.
+        The polled v4 record cannot answer it: the call coordinator skips calls
+        it has already seen, so the status it holds is the one the call had when
+        it first appeared, and a ringing call first appears as ``initializing``
+        and stays that way in our copy forever.
+        """
+        return (self.status or "") not in FINISHED_CALL_STATUSES
 
     @classmethod
     def from_v3(cls, data: dict[str, Any]) -> CallHandle | None:
@@ -378,6 +393,7 @@ class CallHandle:
         guid = attributes.get("guid") if isinstance(attributes, dict) else None
         panel = ((data.get("relationships") or {}).get("panel") or {}).get("data") or {}
         panel_id = _int_or_none(panel.get("id"), field_name="v3.call.panel.id")
+        status = attributes.get("status") if isinstance(attributes, dict) else None
         if call_id is None or not guid or panel_id is None:
             _LOGGER.debug(
                 "v3 call record is missing what the panel is addressed by "
@@ -387,7 +403,12 @@ class CallHandle:
                 panel_id,
             )
             return None
-        return cls(call_id=call_id, guid=str(guid), panel_id=panel_id)
+        return cls(
+            call_id=call_id,
+            guid=str(guid),
+            panel_id=panel_id,
+            status=status,
+        )
 
 
 @dataclass(frozen=True, slots=True)

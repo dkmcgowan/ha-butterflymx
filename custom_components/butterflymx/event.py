@@ -80,7 +80,7 @@ async def _async_decline_call(entity: Entity, call: ServiceCall) -> None:
             translation_placeholders={"entity": entity.entity_id},
         )
 
-    live = entity.coordinator.live_call_for_tenant(entity.tenant.id)
+    live = entity.coordinator.recent_call_for_tenant(entity.tenant.id)
     if live is None:
         raise ServiceValidationError(
             translation_domain=DOMAIN,
@@ -91,7 +91,7 @@ async def _async_decline_call(entity: Entity, call: ServiceCall) -> None:
     client = entity.coordinator.client
     try:
         handle = await client.async_get_call_handle(live.id)
-        if handle is None:
+        if handle is None or not handle.is_live:
             raise ServiceValidationError(
                 translation_domain=DOMAIN,
                 translation_key="no_call_to_decline",
