@@ -136,6 +136,7 @@ the action, meant to be dropped into an automation or script you already have.
 
 ```yaml
 alias: "Someone is at the door"
+mode: restart
 triggers:
   - trigger: state
     entity_id: event.<unit>_doorbell
@@ -150,25 +151,61 @@ actions:
         priority: high
         image: "{{ trigger.to_state.attributes.image_url }}"
         actions:
-          - action: BMX_OPEN
-            title: "Let them in"
-          - action: BMX_IGNORE
-            title: "Ignore"
+          - action: BMX_UNLOCK
+            title: Unlock
+          - action: BMX_DECLINE
+            title: Decline
   - wait_for_trigger:
       - trigger: event
         event_type: mobile_app_notification_action
         event_data:
-          action: BMX_OPEN
-    timeout: "00:02:00"
+          action: BMX_UNLOCK
+      - trigger: event
+        event_type: mobile_app_notification_action
+        event_data:
+          action: BMX_DECLINE
+    timeout: "00:00:40"
     continue_on_timeout: true
-  # Nothing tapped, or "Ignore" tapped: stop here without opening.
-  - condition: template
-    value_template: "{{ wait.trigger is not none }}"
-  - action: lock.open
-    target:
-      entity_id: lock.<door>
-mode: restart
+  - choose:
+      # Unlock tapped.
+      - conditions:
+          - condition: template
+            value_template: >-
+              {{ wait.trigger is not none
+                 and wait.trigger.event.data.action == 'BMX_UNLOCK' }}
+        sequence:
+          - action: lock.open
+            target:
+              entity_id: lock.<door>
+          - action: notify.mobile_app_<your_phone>
+            data:
+              message: clear_notification
+              data:
+                tag: butterflymx
+      # Decline tapped.
+      - conditions:
+          - condition: template
+            value_template: "{{ wait.trigger is not none }}"
+        sequence:
+          - action: notify.mobile_app_<your_phone>
+            data:
+              message: clear_notification
+              data:
+                tag: butterflymx
+    # Nobody tapped anything for 40 seconds.
+    default:
+      - action: notify.mobile_app_<your_phone>
+        data:
+          title: ButterflyMX
+          message: "Missed visitor at {{ trigger.to_state.attributes.device_name }}"
+          data:
+            tag: butterflymx
+            image: "{{ trigger.to_state.attributes.image_url }}"
 ```
+
+**The four action IDs have to agree.** `BMX_UNLOCK` and `BMX_DECLINE` appear
+twice each, once as a button and once as a trigger. Rename one and forget the
+other and nothing matches, so every visitor silently becomes a missed one.
 
 `mode: restart` means a second visitor replaces the first rather than being
 dropped while the automation is still waiting.
@@ -179,17 +216,23 @@ registers, not a notify entity. The buttons and the photo travel in the nested
 and a message, so everything below it is rejected. Find the exact name under
 **Developer tools → Actions**.
 
-`tag` replaces the previous notification instead of stacking a new one, and
-`ttl: 0` with `priority: high` tells Android to deliver immediately rather than
-batching. Both are Android options; on iOS drop them and use a `push` block if
-you want the same urgency.
+`tag` is what makes the notification update in place rather than pile up: the
+same tag on the missed notice replaces the ringing one, and `clear_notification`
+removes it outright. `ttl: 0` with `priority: high` tell Android to deliver the
+ring immediately instead of batching it. The missed notice deliberately leaves
+both out, so it arrives quietly. Those two are Android options; on iOS drop them
+and use a `push` block if you want the same urgency.
 
-**"Ignore" only dismisses the notification.** ButterflyMX has no endpoint for
+**Why 40 seconds?** That is how long the ButterflyMX app rings before giving up,
+so the notification stops offering to unlock at the same moment their app stops
+offering to answer. Their word for the door action is "Unlock", which is why the
+button says that rather than "Answer": their Answer button starts a video call,
+which this cannot do.
+
+**"Decline" only dismisses the notification.** ButterflyMX has no endpoint for
 answering or declining a call. The API can list calls and open doors, and that
 is all, so nothing here can hang up on a visitor or stop their intercom
-ringing. They give up, or you answer in the ButterflyMX app. The button is there
-so the notification has an obvious way out. Letting the two-minute timeout
-expire does the same thing.
+ringing. They give up, or you answer in the ButterflyMX app.
 
 The photo needs no special setup: `image_url` points at a plain web address
 your phone can load directly, unlike a camera snapshot that would need Home
