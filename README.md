@@ -121,11 +121,15 @@ automations and history survive that.
 
 ## Things to do with it
 
-**Get a photo of whoever is at the door:**
+**See who is at the door and let them in from the notification:**
 
 ```yaml
 automation:
   - alias: "Someone is at the door"
+    mode: restart
+    variables:
+      # The door the "Let them in" button opens.
+      door: lock.front_entrance
     triggers:
       - trigger: state
         entity_id: event.unit_4b_doorbell
@@ -133,10 +137,43 @@ automation:
       - action: notify.mobile_app_my_phone
         data:
           title: "Someone is at {{ trigger.to_state.attributes.device_name }}"
-          message: "{{ trigger.to_state.attributes.notification_type }}"
+          message: "Tap to see who it is"
           data:
             image: "{{ trigger.to_state.attributes.image_url }}"
+            actions:
+              - action: BMX_OPEN
+                title: "Let them in"
+              - action: BMX_IGNORE
+                title: "Ignore"
+      - wait_for_trigger:
+          - trigger: event
+            event_type: mobile_app_notification_action
+            event_data:
+              action: BMX_OPEN
+        timeout: "00:02:00"
+        continue_on_timeout: true
+      # Nothing tapped, or "Ignore" tapped: stop here without opening.
+      - condition: template
+        value_template: "{{ wait.trigger is not none }}"
+      - action: lock.open
+        target:
+          entity_id: "{{ door }}"
 ```
+
+Change `door:` at the top to whichever lock you want the button to open.
+`mode: restart` means a second visitor replaces the first rather than being
+dropped while the automation is still waiting.
+
+**"Ignore" only dismisses the notification.** ButterflyMX has no endpoint for
+answering or declining a call — the API can list calls and open doors, and that
+is all — so nothing here can hang up on a visitor or stop their intercom from
+ringing. They give up, or you answer in the ButterflyMX app. The button exists
+so the notification has an obvious way out; letting the two-minute timeout
+expire does exactly the same thing.
+
+The photo needs no special setup: `image_url` points at a plain web address
+your phone can load directly, unlike a camera snapshot that would need Home
+Assistant to be reachable from outside.
 
 **Open the door from anywhere:**
 
@@ -415,6 +452,11 @@ administrative belongs in ButterflyMX's own tools.
 No. It checks for new calls on a timer by default and works entirely from inside
 your network. Exposing Home Assistant is only needed for the optional webhook
 setting.
+
+**Can I answer or decline a call from Home Assistant?**
+No. ButterflyMX's API can list calls and open doors; there is no endpoint for
+picking up or hanging up. You can be told instantly that someone is there, see
+their photo and let them in, but talking to them means the ButterflyMX app.
 
 **Why is there no live video or intercom audio?**
 ButterflyMX only offers those through their own phone apps, using technology that
