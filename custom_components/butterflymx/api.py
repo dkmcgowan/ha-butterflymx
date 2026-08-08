@@ -522,9 +522,16 @@ class ButterflyMXClient:
         v4 does not carry either, and they are what the panel is addressed by.
         The two APIs number calls the same way, verified on a live account, so
         the ID this integration already has is enough to find the rest.
+
+        Not retried.  This is only worth knowing while the call is still up, and
+        backing off exponentially would spend longer than the panel rings for.
         """
         payload = await self._async_request(
-            "GET", "/me/calls", base_path=V3_PATH, content_type=V3_CONTENT_TYPE
+            "GET",
+            "/me/calls",
+            retry=False,
+            base_path=V3_PATH,
+            content_type=V3_CONTENT_TYPE,
         )
         data = payload.get("data") if isinstance(payload, dict) else None
         if not isinstance(data, list):
