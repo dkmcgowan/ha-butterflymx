@@ -57,7 +57,7 @@ You need two things:
 1. **A ButterflyMX account** that is a resident of the building, the same login
    you use in their app. The integration only ever acts as you, and can only
    open doors you can already open.
-2. **Home Assistant 2026.3 or newer.**
+2. **Home Assistant 2025.3 or newer.**
 
 **And possibly a third: a ButterflyMX client ID.** Whether you need one depends
 on this copy of the integration. If it ships with a client ID, setup just asks
