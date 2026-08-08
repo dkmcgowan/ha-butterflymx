@@ -485,38 +485,6 @@ The integration page also has a **Download diagnostics** button. It is safe to
 attach to an issue; passwords, tokens and personal details are removed
 automatically.
 
----
-
-## For developers
-
-```bash
-pip install -r requirements-dev.txt
-ruff check custom_components tests scripts
-pytest
-```
-
-The suite needs Linux or macOS. The test harness imports `homeassistant.runner`,
-which imports `fcntl` at the top level, so collection fails on Windows before
-any test runs. `ruff` works everywhere, and CI runs the suite on Ubuntu on every
-push.
-
-`scripts/probe_api.py` signs in and reports what a live account actually
-returns. Standard library only, every request a `GET`, and it never opens a
-door. The token is cached in `scripts/.bmx-token-<env>.json` and a redacted
-transcript written to `scripts/probe-output-<env>.json`; both are gitignored and
-names, emails, PINs and pass codes are stripped, so the transcript is safe to
-attach to an issue.
-
-```bash
-export BMX_CLIENT_ID=...
-python scripts/probe_api.py --env sandbox
-```
-
-Test against sandbox first. Door releases are real, and a mistake pointed at
-production opens an actual door.
-
-Issues and pull requests are welcome.
-
 ## Trademarks
 
 ButterflyMX and its logo are trademarks of ButterflyMX, Inc. The images in
