@@ -35,7 +35,7 @@ from .conftest import (
 def _client(hass: HomeAssistant, token: dict | None = None) -> ButterflyMXClient:
     session = async_get_clientsession(hass)
     auth = ButterflyMXAuth(
-        session, ACCOUNTS_URL, "cid", "secret", token or make_token()
+        session, ACCOUNTS_URL, "cid", token or make_token()
     )
     return ButterflyMXClient(session, API_URL, auth)
 

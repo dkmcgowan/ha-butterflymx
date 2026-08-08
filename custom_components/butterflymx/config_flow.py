@@ -42,7 +42,6 @@ from .const import (
     CONF_AUTH_CODE,
     CONF_CALL_SCAN_INTERVAL,
     CONF_CLIENT_ID,
-    CONF_CLIENT_SECRET,
     CONF_ENABLE_WEBHOOK,
     CONF_ENVIRONMENT,
     CONF_REDIRECT_URI,
@@ -99,7 +98,6 @@ class ButterflyMXConfigFlow(ConfigFlow, domain=DOMAIN):
         self._accounts_url: str = ENVIRONMENTS[ENV_PRODUCTION][CONF_ACCOUNTS_URL]
         self._api_url: str = ENVIRONMENTS[ENV_PRODUCTION][CONF_API_URL]
         self._client_id: str = ""
-        self._client_secret: str = ""
         self._redirect_uri: str = OOB_REDIRECT_URI
         self._reauth_entry: ConfigEntry | None = None
         # One verifier per flow.  It has to survive from building the authorize
@@ -138,7 +136,6 @@ class ButterflyMXConfigFlow(ConfigFlow, domain=DOMAIN):
         """
         if user_input is not None:
             self._client_id = user_input[CONF_CLIENT_ID].strip()
-            self._client_secret = (user_input.get(CONF_CLIENT_SECRET) or "").strip()
             self._redirect_uri = (
                 user_input.get(CONF_REDIRECT_URI) or OOB_REDIRECT_URI
             ).strip()
@@ -147,9 +144,6 @@ class ButterflyMXConfigFlow(ConfigFlow, domain=DOMAIN):
         schema = vol.Schema(
             {
                 vol.Required(CONF_CLIENT_ID, default=self._client_id): str,
-                # Optional: ButterflyMX issues public clients, which authorize
-                # with PKCE and have no secret at all.
-                vol.Optional(CONF_CLIENT_SECRET, default=self._client_secret): str,
                 vol.Optional(CONF_REDIRECT_URI, default=self._redirect_uri): str,
             }
         )
@@ -164,7 +158,6 @@ class ButterflyMXConfigFlow(ConfigFlow, domain=DOMAIN):
             self._accounts_url,
             self._client_id,
             self._code_verifier,
-            self._client_secret or None,
             self._redirect_uri,
         )
 
@@ -181,7 +174,6 @@ class ButterflyMXConfigFlow(ConfigFlow, domain=DOMAIN):
                         self._client_id,
                         code,
                         self._code_verifier,
-                        self._client_secret or None,
                         self._redirect_uri,
                     )
                     account_id, account_name = await self._async_probe_account(token)
@@ -223,7 +215,6 @@ class ButterflyMXConfigFlow(ConfigFlow, domain=DOMAIN):
             session,
             self._accounts_url,
             self._client_id,
-            self._client_secret,
             token,
         )
         client = ButterflyMXClient(session, self._api_url, auth)
@@ -247,7 +238,6 @@ class ButterflyMXConfigFlow(ConfigFlow, domain=DOMAIN):
             CONF_ACCOUNTS_URL: self._accounts_url,
             CONF_API_URL: self._api_url,
             CONF_CLIENT_ID: self._client_id,
-            CONF_CLIENT_SECRET: self._client_secret,
             CONF_REDIRECT_URI: self._redirect_uri,
             CONF_TOKEN: token,
             # Allocated now, whether or not push is ever switched on, so the
@@ -278,7 +268,6 @@ class ButterflyMXConfigFlow(ConfigFlow, domain=DOMAIN):
         self._accounts_url = entry_data[CONF_ACCOUNTS_URL]
         self._api_url = entry_data[CONF_API_URL]
         self._client_id = entry_data[CONF_CLIENT_ID]
-        self._client_secret = entry_data.get(CONF_CLIENT_SECRET) or ""
         self._redirect_uri = entry_data.get(CONF_REDIRECT_URI, OOB_REDIRECT_URI)
         return await self.async_step_reauth_confirm()
 

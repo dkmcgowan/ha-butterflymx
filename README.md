@@ -68,8 +68,7 @@ programme at <https://apidocs.butterflymx.com/docs/getting-started>.
 Either way you sign in with your own account and the integration only ever holds
 your own access. A client ID is not a password and is not treated as one: it
 identifies the application, not you, and ButterflyMX issues it as a public
-client, so there is no secret to go with it. If you were given a client secret
-as well, there is a field for it, but most credentials do not have one.
+client, so there is no secret to go with it.
 
 ## Install
 
@@ -91,10 +90,10 @@ Copy the `custom_components/butterflymx` folder into your Home Assistant
 
 Two short steps, or three if you are supplying your own client ID.
 
-1. **Enter your client ID**, if you are asked for one. Leave the client secret
-   empty unless ButterflyMX gave you one, and leave the redirect URI alone
-   unless they registered a custom one. If setup goes straight to signing in,
-   this copy already has a client ID and there is nothing to enter.
+1. **Enter your client ID**, if you are asked for one. Leave the redirect URI
+   alone unless ButterflyMX registered a custom one for you. If setup goes
+   straight to signing in, this copy already has a client ID and there is
+   nothing to enter.
 
 2. **Sign in to ButterflyMX.** Home Assistant shows you a link. Open it, sign in
    with your normal ButterflyMX account, and approve access. This happens on
@@ -535,7 +534,7 @@ payloads, whether snapshot URLs are pre-signed, and the shape of access logs,
 schedules, passes and PINs. Standard library only, so no virtualenv is needed.
 
 ```bash
-export BMX_CLIENT_ID=... BMX_CLIENT_SECRET=...
+export BMX_CLIENT_ID=...
 python scripts/probe_api.py --env sandbox
 ```
 
@@ -563,8 +562,8 @@ the config entry re-runs setup without re-importing changed modules.
 ### How it talks to ButterflyMX
 
 Authorization is the OAuth authorization-code flow with PKCE. ButterflyMX issues
-public clients, so there is no client secret in the flow and nothing sensitive in
-the URL you open in your browser. Access tokens last 24 hours. The integration
+public clients, so nothing sensitive ever travels in the URL you open in your
+browser. Access tokens last 24 hours. The integration
 refreshes a few minutes before expiry and stores both halves of the new pair,
 because ButterflyMX rotates the refresh token every time. A rejected refresh
 raises a re-authentication flow.

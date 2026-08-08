@@ -23,14 +23,11 @@ Standard library only, so it runs with any Python 3.11+ and needs no virtualenv.
 Usage:
 
     export BMX_CLIENT_ID=...        # or pass --client-id
-    export BMX_CLIENT_SECRET=...    # optional; omit to use PKCE instead
     python scripts/probe_api.py --env sandbox
 
-A client secret is only needed for a confidential client, which is what the
-developer documentation describes.  Leave it unset and the script uses
-authorization code with PKCE instead, the way the official mobile app talks to
-these same endpoints.  If a client is registered as public, PKCE is the only
-thing that will work; if it is confidential, the secret is required.
+Authorization is the authorization-code flow with PKCE, the way the official
+mobile app talks to these same endpoints and the way the integration does.  A
+client ID is all it needs.
 
 On the first run it prints a ButterflyMX sign-in link, waits for you to paste
 back the authorization code, and caches the resulting token in
@@ -201,29 +198,20 @@ def _pkce_pair() -> tuple[str, str]:
     return verifier, base64.urlsafe_b64encode(digest).decode().rstrip("=")
 
 
-def authorize(
-    accounts_url: str, client_id: str, client_secret: str | None
-) -> dict[str, Any]:
+def authorize(accounts_url: str, client_id: str) -> dict[str, Any]:
     """Walk the authorization-code flow interactively.
 
-    Two shapes are supported, because ButterflyMX registers both kinds of
-    client.  With a secret this is the confidential flow the developer
-    documentation describes.  Without one it falls back to PKCE, which is what
-    the official mobile app uses against these same endpoints.
+    PKCE, the same way the official mobile app authorizes against these
+    endpoints, and the same way the integration does.
     """
-    verifier: str | None = None
+    verifier, challenge = _pkce_pair()
     params: dict[str, str] = {
         "client_id": client_id,
         "redirect_uri": OOB_REDIRECT_URI,
         "response_type": "code",
+        "code_challenge": challenge,
+        "code_challenge_method": "S256",
     }
-    if client_secret:
-        params["client_secret"] = client_secret
-    else:
-        verifier, challenge = _pkce_pair()
-        params["code_challenge"] = challenge
-        params["code_challenge_method"] = "S256"
-        print("  no client secret given; using PKCE")
 
     query = urllib.parse.urlencode(params)
     print("\nOpen this URL, sign in to ButterflyMX and approve access:\n")
@@ -240,11 +228,8 @@ def authorize(
         "code": code,
         "client_id": client_id,
         "redirect_uri": OOB_REDIRECT_URI,
+        "code_verifier": verifier,
     }
-    if client_secret:
-        exchange["client_secret"] = client_secret
-    if verifier:
-        exchange["code_verifier"] = verifier
 
     status, payload = _request("POST", f"{accounts_url}/oauth/token", data=exchange)
     if status != 200 or not isinstance(payload, dict) or "access_token" not in payload:
@@ -253,13 +238,9 @@ def authorize(
 
 
 def refresh(
-    accounts_url: str, client_id: str, client_secret: str | None, token: dict[str, Any]
+    accounts_url: str, client_id: str, token: dict[str, Any]
 ) -> dict[str, Any]:
-    """Exchange the refresh token for a new pair.
-
-    No client_secret: both the documentation and the official app leave it out
-    of the refresh grant.
-    """
+    """Exchange the refresh token for a new pair."""
     status, payload = _request(
         "POST",
         f"{accounts_url}/oauth/token",
@@ -276,7 +257,7 @@ def refresh(
     return new_token
 
 
-def get_token(env: str, accounts_url: str, client_id: str, client_secret: str) -> dict[str, Any]:
+def get_token(env: str, accounts_url: str, client_id: str) -> dict[str, Any]:
     """Load, refresh or obtain a token."""
     token = _load_token(env)
     if token and token.get("expires_at", 0) - 300 > time.time():
@@ -285,7 +266,7 @@ def get_token(env: str, accounts_url: str, client_id: str, client_secret: str) -
     if token and token.get("refresh_token"):
         print("Cached token expired; refreshing...")
         try:
-            token = refresh(accounts_url, client_id, client_secret, token)
+            token = refresh(accounts_url, client_id, token)
         except ProbeError as err:
             print(f"  refresh failed ({err}); starting a fresh authorization")
         else:
@@ -293,7 +274,7 @@ def get_token(env: str, accounts_url: str, client_id: str, client_secret: str) -
             print("  refresh succeeded; refresh tokens work as documented")
             return token
 
-    token = authorize(accounts_url, client_id, client_secret)
+    token = authorize(accounts_url, client_id)
     _save_token(env, token)
     return token
 
@@ -631,7 +612,6 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument("--env", choices=sorted(ENVIRONMENTS), default="sandbox")
     parser.add_argument("--client-id", default=os.environ.get("BMX_CLIENT_ID"))
-    parser.add_argument("--client-secret", default=os.environ.get("BMX_CLIENT_SECRET"))
     parser.add_argument(
         "--reset", action="store_true", help="discard the cached token and re-authorize"
     )
@@ -649,7 +629,7 @@ def main() -> int:
         _token_path(args.env).unlink(missing_ok=True)
 
     try:
-        token = get_token(args.env, urls["accounts"], args.client_id, args.client_secret)
+        token = get_token(args.env, urls["accounts"], args.client_id)
         transcript, findings = probe(urls["api"], token["access_token"])
     except ProbeError as err:
         print(f"\nFAILED: {err}", file=sys.stderr)

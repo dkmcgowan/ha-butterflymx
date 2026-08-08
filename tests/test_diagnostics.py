@@ -25,8 +25,7 @@ async def _dump(hass: HomeAssistant, entry: MockConfigEntry) -> tuple[dict, str]
 @pytest.mark.parametrize(
     "secret",
     [
-        "client-id",  # credentials from the config entry
-        "client-secret",
+        "client-id",  # the client the entry authorized as
         "access-1",  # access token
         "refresh-1",  # refresh token
         "ada@example.com",  # who the resident is
@@ -78,5 +77,6 @@ async def test_diagnostics_for_an_entry_that_never_loaded(
     payload, dumped = await _dump(hass, config_entry)
 
     assert payload["state"] == "not loaded"
-    assert payload["entry"]["data"]["client_secret"] == "**REDACTED**"
-    assert "client-secret" not in dumped
+    # Redaction has to survive the early return, not just the full dump.
+    assert "client-id" not in dumped
+    assert "refresh-1" not in dumped

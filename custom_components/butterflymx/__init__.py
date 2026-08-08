@@ -20,7 +20,6 @@ from .const import (
     CONF_API_URL,
     CONF_CALL_SCAN_INTERVAL,
     CONF_CLIENT_ID,
-    CONF_CLIENT_SECRET,
     CONF_ENABLE_WEBHOOK,
     CONF_RELOCK_DELAY,
     CONF_TOKEN,
@@ -78,7 +77,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ButterflyMXConfigEntry) 
         session=session,
         accounts_url=entry.data[CONF_ACCOUNTS_URL],
         client_id=entry.data[CONF_CLIENT_ID],
-        client_secret=entry.data[CONF_CLIENT_SECRET],
         token=entry.data[CONF_TOKEN],
         token_updater=_async_save_token,
     )

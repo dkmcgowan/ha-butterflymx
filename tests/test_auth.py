@@ -45,14 +45,6 @@ def test_build_authorize_url_uses_pkce_and_carries_no_secret() -> None:
     assert verifier not in url
 
 
-def test_build_authorize_url_still_sends_a_secret_when_there_is_one() -> None:
-    """A confidential client keeps working, with PKCE alongside."""
-    url = build_authorize_url(ACCOUNTS_URL, "cid", new_code_verifier(), "secret")
-
-    assert "client_secret=secret" in url
-    assert "code_challenge_method=S256" in url
-
-
 def test_code_challenge_is_s256_of_the_verifier() -> None:
     """The challenge must be the unpadded base64url SHA-256 of the verifier."""
     expected = (
@@ -129,7 +121,7 @@ async def test_exchange_code_server_error(hass: HomeAssistant, aioclient_mock) -
 async def test_valid_token_is_not_refreshed(hass: HomeAssistant, aioclient_mock) -> None:
     """A token with plenty of life left is reused as-is."""
     auth = ButterflyMXAuth(
-        async_get_clientsession(hass), ACCOUNTS_URL, "cid", "secret", make_token()
+        async_get_clientsession(hass), ACCOUNTS_URL, "cid", make_token()
     )
     assert await auth.async_get_access_token() == "access-1"
     assert not aioclient_mock.mock_calls
@@ -156,7 +148,6 @@ async def test_expiring_token_is_refreshed_and_persisted(
         async_get_clientsession(hass),
         ACCOUNTS_URL,
         "cid",
-        "secret",
         make_token(expires_in=10),
         token_updater=_save,
     )
@@ -176,7 +167,6 @@ async def test_refresh_keeps_old_token_when_none_returned(
         async_get_clientsession(hass),
         ACCOUNTS_URL,
         "cid",
-        "secret",
         make_token(expires_in=10),
     )
 
@@ -193,7 +183,6 @@ async def test_revoked_refresh_token_raises_auth_error(
         async_get_clientsession(hass),
         ACCOUNTS_URL,
         "cid",
-        "secret",
         make_token(expires_in=0),
     )
 
@@ -201,7 +190,7 @@ async def test_revoked_refresh_token_raises_auth_error(
         await auth.async_get_access_token()
 
 
-async def test_refresh_grant_omits_client_secret(
+async def test_refresh_grant_sends_only_what_is_needed(
     hass: HomeAssistant, aioclient_mock
 ) -> None:
     """The refresh grant sends exactly what ButterflyMX documents."""
@@ -213,7 +202,6 @@ async def test_refresh_grant_omits_client_secret(
         async_get_clientsession(hass),
         ACCOUNTS_URL,
         "cid",
-        "secret",
         make_token(expires_in=10),
     )
 
@@ -223,7 +211,6 @@ async def test_refresh_grant_omits_client_secret(
     assert body["grant_type"] == "refresh_token"
     assert body["refresh_token"] == "refresh-1"
     assert body["client_id"] == "cid"
-    assert "client_secret" not in body
 
 
 async def test_concurrent_forced_refresh_only_refreshes_once(
@@ -238,7 +225,6 @@ async def test_concurrent_forced_refresh_only_refreshes_once(
         async_get_clientsession(hass),
         ACCOUNTS_URL,
         "cid",
-        "secret",
         make_token(expires_in=10),
     )
 
@@ -262,7 +248,6 @@ async def test_forced_refresh_runs_again_for_a_different_token(
         async_get_clientsession(hass),
         ACCOUNTS_URL,
         "cid",
-        "secret",
         make_token(expires_in=10),
     )
 
@@ -278,7 +263,6 @@ async def test_missing_refresh_token_raises(hass: HomeAssistant) -> None:
         async_get_clientsession(hass),
         ACCOUNTS_URL,
         "cid",
-        "secret",
         {"access_token": "a", "expires_at": 0},
     )
 

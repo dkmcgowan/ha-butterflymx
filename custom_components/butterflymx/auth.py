@@ -1,9 +1,13 @@
 """OAuth2 token handling for ButterflyMX.
 
-Authorization uses PKCE.  ButterflyMX issues public clients, which have no
-secret to authenticate with, so the code challenge is what proves the code came
-back to whoever asked for it.  A client secret is accepted if one is configured,
-for the confidential clients the documentation describes, but it is optional.
+Authorization uses PKCE, and only PKCE.  ButterflyMX issues public clients,
+which have no secret to authenticate with, so the code challenge is what proves
+the code came back to whoever asked for it.  Their documentation also describes
+a confidential client with a secret; this deliberately does not support one.  It
+would have to travel in the browser's address bar to reach the authorization
+endpoint, which puts it in history, and it buys nothing the challenge does not
+already provide.  Verified against a live account: authorize, exchange and
+refresh all succeed with a client ID alone.
 
 Access tokens are valid for 24 hours.  A refresh returns a *new* refresh token
 along with them, confirmed against a live account, so both values have to be
@@ -54,19 +58,18 @@ def build_authorize_url(
     accounts_url: str,
     client_id: str,
     code_verifier: str,
-    client_secret: str | None = None,
     redirect_uri: str = OOB_REDIRECT_URI,
 ) -> str:
     """Build the URL the user visits to authorize Home Assistant.
 
-    Always uses PKCE.  ButterflyMX issues public clients -- their own app
-    authorizes this way against the same endpoint -- and a public client has no
-    secret to prove itself with, so the challenge is what ties the code to us.
+    PKCE, always.  ButterflyMX issues public clients -- their own app authorizes
+    this way against the same endpoint -- and a public client has no secret to
+    prove itself with, so the challenge is what ties the code to us.
 
-    The documented flow instead puts ``client_secret`` in this URL, which is
-    what a confidential client needs.  If one is configured it is sent as well,
-    since the authorization server accepts both together, but leaving it out is
-    the normal case and keeps the secret out of the browser's history.
+    ButterflyMX's own documentation puts a ``client_secret`` in this URL, which
+    is what a confidential client would need.  This does not support that, and
+    deliberately: it would mean a secret in the browser's address bar and in its
+    history, to buy nothing that the challenge does not already provide.
     """
     params = {
         "client_id": client_id,
@@ -75,8 +78,6 @@ def build_authorize_url(
         "code_challenge": code_challenge_for(code_verifier),
         "code_challenge_method": "S256",
     }
-    if client_secret:
-        params["client_secret"] = client_secret
     return f"{accounts_url.rstrip('/')}{OAUTH2_AUTHORIZE_PATH}?{urlencode(params)}"
 
 
@@ -116,10 +117,13 @@ async def async_exchange_code(
     client_id: str,
     code: str,
     code_verifier: str,
-    client_secret: str | None = None,
     redirect_uri: str = OOB_REDIRECT_URI,
 ) -> dict[str, Any]:
-    """Exchange an authorization code for a token pair."""
+    """Exchange an authorization code for a token pair.
+
+    The verifier is what proves this is the same client that started the
+    authorization; there is no secret involved at any point.
+    """
     data = {
         "grant_type": "authorization_code",
         "code": code,
@@ -127,8 +131,6 @@ async def async_exchange_code(
         "code_verifier": code_verifier,
         "redirect_uri": redirect_uri,
     }
-    if client_secret:
-        data["client_secret"] = client_secret
     return await _async_token_request(session, accounts_url, data)
 
 
@@ -176,7 +178,6 @@ class ButterflyMXAuth:
         session: ClientSession,
         accounts_url: str,
         client_id: str,
-        client_secret: str,
         token: dict[str, Any],
         token_updater: TokenUpdater | None = None,
     ) -> None:
@@ -184,7 +185,6 @@ class ButterflyMXAuth:
         self._session = session
         self._accounts_url = accounts_url
         self._client_id = client_id
-        self._client_secret = client_secret
         self._token = dict(token)
         self._token_updater = token_updater
         self._lock = asyncio.Lock()
@@ -237,9 +237,9 @@ class ButterflyMXAuth:
             raise ButterflyMXAuthError("No refresh token stored; re-authorization required")
 
         _LOGGER.debug("Refreshing ButterflyMX access token")
-        # ButterflyMX documents the refresh grant without client_secret, unlike
-        # the authorization_code exchange.  Follow the documentation; if a real
-        # deployment turns out to require it, self._client_secret is still here.
+        # Client ID and refresh token, nothing else.  Verified against the live
+        # authorization server, which is also what ButterflyMX documents for
+        # this grant.
         new_token = await _async_token_request(
             self._session,
             self._accounts_url,

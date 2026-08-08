@@ -16,7 +16,6 @@ from custom_components.butterflymx.const import (
     CONF_AUTH_CODE,
     CONF_CALL_SCAN_INTERVAL,
     CONF_CLIENT_ID,
-    CONF_CLIENT_SECRET,
     CONF_ENABLE_WEBHOOK,
     CONF_REDIRECT_URI,
     CONF_RELOCK_DELAY,
@@ -45,7 +44,6 @@ TOKEN_RESPONSE = {
 
 CREDENTIALS = {
     CONF_CLIENT_ID: "client-id",
-    CONF_CLIENT_SECRET: "client-secret",
     CONF_REDIRECT_URI: OOB_REDIRECT_URI,
 }
 
