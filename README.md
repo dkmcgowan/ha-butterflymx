@@ -39,6 +39,14 @@ your unit. A door called "Front Entrance" in an apartment 4B becomes
 | `sensor.<unit>_last_door_opened` | When a door was last opened, which one, and how: `PIN`, `Fob`, `App call` or `API`. |
 | `sensor.<unit>_passes` | How many visitor and delivery codes are currently valid, and what they are for. See [Visitor and delivery passes](#visitor-and-delivery-passes). |
 
+A ButterflyMX door has no lock to read. The intercom can buzz it open but never
+reports whether it is open or shut, so the lock entity shows unlocked for
+exactly as long as the door really stays open, then goes back to locked. That
+length is set on each door and they differ more than you would expect: one
+building has three doors set to 4, 9 and 14 seconds. Home Assistant reads each
+door's own setting, so there is nothing to configure, and an automation that
+needs the number can read it from the lock's `open_duration` attribute.
+
 The examples below use the same placeholders, so copying one means replacing
 `<door>` and `<unit>` with your own. To find them, look under **Settings →
 Devices & services → ButterflyMX → entities**, or start typing in any entity
