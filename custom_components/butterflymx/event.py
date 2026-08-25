@@ -7,7 +7,7 @@ without touching the API themselves.
 
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from homeassistant.components.event import EventDeviceClass, EventEntity
 from homeassistant.core import HomeAssistant, ServiceCall, callback
@@ -64,6 +64,20 @@ async def async_setup_entry(
     entity_platform.async_get_current_platform().async_register_entity_service(
         SERVICE_DECLINE_CALL, None, _async_decline_call
     )
+
+
+@callback
+def _with_resident(tenant: Tenant, data: dict[str, Any]) -> dict[str, Any]:
+    """Name the resident this tenancy belongs to on an event payload.
+
+    The call itself carries only ``recipient_id``, and on an account with two
+    logins for one unit both tenancies produce identically named entities --
+    the unit label is what names them, so Home Assistant separates them with a
+    ``_2`` suffix rather than by resident.  That leaves an automation no way to
+    say who was called without hard-coding an entity ID, which is a registry
+    accident and can move.  The tenancy knows the name, so it goes in the event.
+    """
+    return {"resident": tenant.display_name, **data}
 
 
 async def _async_decline_call(entity: Entity, call: ServiceCall) -> None:
@@ -128,7 +142,7 @@ class ButterflyMXDoorbellEvent(ButterflyMXCallEntity, EventEntity):
         """Fire the doorbell for calls addressed to this tenancy."""
         if tenant.id != self._tenant.id:
             return
-        self._trigger_event(EVENT_TYPE_RING, call.as_event_data())
+        self._trigger_event(EVENT_TYPE_RING, _with_resident(tenant, call.as_event_data()))
         self.async_write_ha_state()
 
     @callback
@@ -173,7 +187,9 @@ class ButterflyMXDoorReleaseEvent(ButterflyMXAccessLogEntity, EventEntity):
         """Fire for releases belonging to this tenancy."""
         if tenant.id != self._tenant.id:
             return
-        self._trigger_event(EVENT_TYPE_DOOR_RELEASE, entry.as_event_data())
+        self._trigger_event(
+            EVENT_TYPE_DOOR_RELEASE, _with_resident(tenant, entry.as_event_data())
+        )
         self.async_write_ha_state()
 
     @callback

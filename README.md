@@ -392,29 +392,60 @@ Three things to expect:
 `event.*_door_opened` needs none of this care. Each setup only ever reports its
 own login's door releases, so whichever one fires is the person who opened it.
 
-### Unlocking as whoever tapped
+### Act as the account that was called
 
-With two locks for one door, pick the one belonging to the person who pressed
-the button, so the access log names them and not you. Companion app
-notifications carry the Home Assistant user whose phone it was, and person
-entities expose theirs, so no IDs need pasting in. Swap the `lock.open` step in
-the doorbell automation for this:
+With two locks for one door it is tempting to always use your own. Do not.
+Opening a door and telling the panel about it are separate things, and the
+second one is scoped to a tenancy: `lock.open` looks for a live call on **its
+own** tenancy, and `butterflymx.decline_call` acts on the tenancy of the
+doorbell entity you target. A visitor picks one name, so only one tenancy has a
+call. Act as the other and the door opens, or the notification clears, while the
+panel carries on dialing and rolls the visitor over to a phone call -- which
+looks exactly like the integration having done nothing.
+
+So drive both from the doorbell that fired. That is the account the official app
+would be acting as, and it is one fact, known before anyone taps anything:
 
 ```yaml
+variables:
+  bmx_lock: >-
+    {{ 'lock.<door>_2' if trigger.entity_id.endswith('_2')
+       else 'lock.<door>' }}
 actions:
+  # ... in the Unlock branch
   - action: lock.open
     target:
-      entity_id: >-
-        {{ 'lock.front_and_inner_door_2'
-           if wait.trigger.event.context.user_id
-              == state_attr('person.sarah', 'user_id')
-           else 'lock.front_and_inner_door' }}
+      entity_id: "{{ bmx_lock }}"
+  # ... in the Decline branch
+  - action: butterflymx.decline_call
+    target:
+      entity_id: "{{ trigger.entity_id }}"
 ```
 
-This only holds if each phone was set up by signing in as **its own** Home
-Assistant user. Set up with one shared login, every tap looks like the same
-person and lands on the `else`. To check, have them open the door once and see
-whose name ButterflyMX records.
+Declining needs no mapping at all, since the doorbell that rang is the entity to
+target. The lock does, and `_2` is a registry accident rather than a promise:
+confirm under **Settings → Devices** that the `_2` lock and the `_2` doorbell sit
+under the same resident before trusting it.
+
+**Either of you can then answer either call, which ButterflyMX itself will not
+let you do.** Its app only ever shows you your own calls. Send the notification
+to both phones and whoever is nearest deals with it; the action is still taken as
+the resident who was called, so the panel is told and the access log stays
+truthful. That is the real reason to add both logins, beyond just seeing both
+sets of calls.
+
+**Say who was called.** Both tenancies are named after the same unit, so the
+entities differ only by a `_2` suffix. The ring carries the resident's name for
+exactly this reason:
+
+```yaml
+message: >-
+  {{ trigger.to_state.attributes.resident }} has a visitor at
+  {{ trigger.to_state.attributes.device_name }}
+```
+
+`resident` is on both `event.*_doorbell` and `event.*_door_opened`, and on the
+`butterflymx_call` and `butterflymx_door_release` bus events.
 
 Before any of this, check you need it. If you share a unit, one entry may
 already cover both of you, and one is simpler than two.

@@ -399,6 +399,7 @@ class ButterflyMXCallCoordinator(DataUpdateCoordinator[dict[int, Call]]):
                     "entry_id": self.config_entry.entry_id,
                     "tenant_id": tenant.id,
                     "unit_label": tenant.unit_label,
+                    "resident": tenant.display_name,
                     **call.as_event_data(),
                 },
             )
@@ -578,6 +579,7 @@ class ButterflyMXAccessLogCoordinator(DataUpdateCoordinator[dict[int, AccessLogE
                     "entry_id": self.config_entry.entry_id,
                     "tenant_id": tenant.id,
                     "unit_label": tenant.unit_label,
+                    "resident": tenant.display_name,
                     **entry.as_event_data(),
                 },
             )

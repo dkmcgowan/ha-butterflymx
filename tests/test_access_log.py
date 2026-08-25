@@ -90,9 +90,12 @@ async def test_a_door_opening_fires_an_event(
     assert data["release_type"] == "Tenant"
     assert data["tenant_id"] == TENANT_ID
     assert data["unit_label"]
+    assert data["resident"] == "Ada Lovelace"
 
     # The event entity should have fired too, not just the bus event.
-    assert hass.states.get(RELEASE_ENTITY) is not None
+    release = hass.states.get(RELEASE_ENTITY)
+    assert release is not None
+    assert release.attributes["resident"] == "Ada Lovelace"
 
 
 async def test_startup_does_not_announce_old_openings(

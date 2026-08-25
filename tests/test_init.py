@@ -272,10 +272,14 @@ async def test_new_call_fires_doorbell_and_updates_entities(
     assert len(events) == 1
     assert events[0].data["call_id"] == 900001
     assert events[0].data["unit_label"] == "4B"
+    assert events[0].data["resident"] == "Ada Lovelace"
 
     doorbell = hass.states.get(DOORBELL_ENTITY)
     assert doorbell.attributes["event_type"] == "ring"
     assert doorbell.attributes["device_name"] == "Lobby Panel"
+    # Who was called, so an automation on an account with two logins for one
+    # unit does not have to infer it from an entity ID.
+    assert doorbell.attributes["resident"] == "Ada Lovelace"
 
     assert hass.states.get(LAST_CALL_ENTITY).state == "2026-08-04T12:00:00+00:00"
 
