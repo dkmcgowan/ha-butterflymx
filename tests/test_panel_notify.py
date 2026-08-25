@@ -148,6 +148,7 @@ async def test_opening_the_door_tells_the_panel(
     assert sent[0][2] == {
         "data": {
             "type": "notifications",
+            "id": str(PANEL_ID),
             "attributes": {
                 "call_guid": GUID,
                 "source_id": PANEL_ID,
@@ -156,6 +157,9 @@ async def test_opening_the_door_tells_the_panel(
             },
         }
     }
+    # The lookup has to ask for the panel, or there is nothing to address.
+    looked_up = [c for c in mock.mock_calls if c[1].path.endswith("/v3/me/calls")]
+    assert looked_up and looked_up[0][1].query.get("include") == "panel"
 
 
 async def test_opening_the_door_with_no_call_says_nothing(
@@ -276,6 +280,7 @@ async def test_declining_ends_the_call(
     ]
     assert len(sent) == 1
     assert sent[0][2]["data"]["attributes"]["call_guid"] == GUID
+    assert sent[0][2]["data"]["id"] == str(PANEL_ID)
     # Declining must not open the door.
     assert not [
         c for c in mock.mock_calls if str(c[1]).endswith("/door_release_requests")

@@ -558,12 +558,19 @@ class ButterflyMXClient:
         The two APIs number calls the same way, verified on a live account, so
         the ID this integration already has is enough to find the rest.
 
+        ``include=panel`` is not decoration.  The panel arrives as a JSON:API
+        relationship, and the official app never asks for this list without it,
+        so a bare request cannot be relied on to carry the linkage that
+        ``CallHandle.from_v3`` reads the panel out of.  Without a panel there is
+        no handle, and the call silently looks unnotifiable.
+
         Not retried.  This is only worth knowing while the call is still up, and
         backing off exponentially would spend longer than the panel rings for.
         """
         payload = await self._async_request(
             "GET",
             "/me/calls",
+            params={"include": "panel"},
             retry=False,
             base_path=V3_PATH,
             content_type=V3_CONTENT_TYPE,
@@ -595,6 +602,11 @@ class ButterflyMXClient:
             json={
                 "data": {
                     "type": "notifications",
+                    # The app sets the resource ID to the source it is
+                    # addressing, which is the panel.  Same value as the
+                    # attribute below, as a string, because that is what it
+                    # sends.
+                    "id": str(handle.panel_id),
                     "attributes": {
                         "call_guid": handle.guid,
                         "source_id": handle.panel_id,
