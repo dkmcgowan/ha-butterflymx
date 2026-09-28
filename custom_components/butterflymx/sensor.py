@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from homeassistant.components.sensor import (
+    RestoreSensor,
     SensorDeviceClass,
     SensorEntity,
     SensorStateClass,
@@ -72,11 +73,46 @@ async def async_setup_entry(
     async_register_pass_services(entity_platform.async_get_current_platform())
 
 
-class ButterflyMXLastCallSensor(ButterflyMXCallEntity, SensorEntity):
+class _RestoredLastEvent(RestoreSensor):
+    """Keep showing the last known event across a restart.
+
+    Calls and door releases are history, and the first poll after startup only
+    reaches back a day.  Without this a restart (an update, say) blanks "last
+    call" until the next visitor.  The restored value stands until the
+    coordinator has something of its own for this tenancy.
+    """
+
+    _restored_keys: tuple[str, ...] = ()
+    _restored_value: datetime | None = None
+    _restored_attributes: dict[str, Any] | None = None
+
+    async def async_added_to_hass(self) -> None:
+        """Pick up the value and details from before the restart."""
+        await super().async_added_to_hass()
+        if (data := await self.async_get_last_sensor_data()) is not None and isinstance(
+            data.native_value, datetime
+        ):
+            self._restored_value = data.native_value
+        if (state := await self.async_get_last_state()) is not None:
+            self._restored_attributes = {
+                key: value
+                for key, value in state.attributes.items()
+                if key in self._restored_keys
+            }
+
+
+class ButterflyMXLastCallSensor(ButterflyMXCallEntity, _RestoredLastEvent):
     """Timestamp of the most recent call to this unit."""
 
     _attr_device_class = SensorDeviceClass.TIMESTAMP
     _attr_translation_key = "last_call"
+    _restored_keys = (
+        "call_id",
+        "notification_type",
+        "status",
+        "device_name",
+        "image_url",
+    )
 
     def __init__(
         self, coordinator: ButterflyMXCallCoordinator, tenant: Tenant
@@ -89,14 +125,14 @@ class ButterflyMXLastCallSensor(ButterflyMXCallEntity, SensorEntity):
     def native_value(self) -> datetime | None:
         """Return when the last call happened."""
         call = self._latest_call
-        return call.logged_at if call else None
+        return call.logged_at if call else self._restored_value
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Expose details of the last call."""
         call = self._latest_call
         if call is None:
-            return {}
+            return dict(self._restored_attributes or {})
         return {
             "call_id": call.id,
             "notification_type": call.notification_type,
@@ -106,8 +142,16 @@ class ButterflyMXLastCallSensor(ButterflyMXCallEntity, SensorEntity):
         }
 
 
-class ButterflyMXLastDoorReleaseSensor(ButterflyMXAccessLogEntity, SensorEntity):
+class ButterflyMXLastDoorReleaseSensor(ButterflyMXAccessLogEntity, _RestoredLastEvent):
     """Timestamp of the last door opened on this tenancy."""
+
+    _restored_keys = (
+        "access_point_id",
+        "release_status",
+        "release_type",
+        "entry_method",
+        "access_tool_id",
+    )
 
     _attr_device_class = SensorDeviceClass.TIMESTAMP
     _attr_translation_key = "last_door_release"
@@ -123,14 +167,14 @@ class ButterflyMXLastDoorReleaseSensor(ButterflyMXAccessLogEntity, SensorEntity)
     def native_value(self) -> datetime | None:
         """Return when a door was last opened."""
         entry = self._latest_release
-        return entry.logged_at if entry else None
+        return entry.logged_at if entry else self._restored_value
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Expose which door was opened and how."""
         entry = self._latest_release
         if entry is None:
-            return {}
+            return dict(self._restored_attributes or {})
         return {
             "access_point_id": entry.access_point_id,
             "release_status": entry.release_status,

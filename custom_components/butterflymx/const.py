@@ -142,8 +142,10 @@ TOPOLOGY_SCAN_INTERVAL: Final = 3600  # seconds
 # slower rate so adding it does not double the request count.
 ACCESS_LOG_SCAN_INTERVAL: Final = 60  # seconds
 
-# How far back to look for door releases on the first poll after startup.
-ACCESS_LOG_LOOKBACK: Final = 300  # seconds
+# How far back to look for door releases on the first poll after startup.  A day,
+# so "last door opened" has something to show after a restart; the first poll
+# only seeds, it never announces (see _priming in the coordinator).
+ACCESS_LOG_LOOKBACK: Final = 86400  # seconds
 
 # Visitor and delivery passes only change when someone changes them, and every
 # service that does asks for a refresh immediately.  This interval exists to
@@ -158,8 +160,10 @@ PASS_SCAN_INTERVAL: Final = 900  # seconds
 # A slow poll repairs all three.
 WEBHOOK_FALLBACK_SCAN_INTERVAL: Final = 300  # seconds
 
-# How far back to look for calls on the first poll after startup.
-CALL_LOOKBACK: Final = 300  # seconds
+# How far back to look for calls on the first poll after startup.  A day, so a
+# call that came in while Home Assistant was down for an update still lands in
+# "last call".  The first poll only seeds, it never rings (see _priming).
+CALL_LOOKBACK: Final = 86400  # seconds
 
 # Each poll asks for calls logged since the previous poll started, minus this
 # much.  Our clock and ButterflyMX's are not the same clock, and a call logged

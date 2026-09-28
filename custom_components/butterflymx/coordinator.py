@@ -37,6 +37,7 @@ from .const import (
     EVENT_CALL,
     EVENT_DOOR_RELEASE,
     LIVE_CALL_WINDOW,
+    PAGE_SIZE,
     PASS_SCAN_INTERVAL,
     TOPOLOGY_SCAN_INTERVAL,
 )
@@ -339,8 +340,14 @@ class ButterflyMXCallCoordinator(DataUpdateCoordinator[dict[int, Call]]):
         calls: list[Call] = []
         try:
             for building_id in topology.building_ids:
+                # The first poll looks back a day, so take a whole page to be sure
+                # every tenancy's latest call is on it (newest first).
                 calls.extend(
-                    await self.client.async_get_calls(building_id, since=since)
+                    await self.client.async_get_calls(
+                        building_id,
+                        since=since,
+                        limit=PAGE_SIZE if self._priming else 20,
+                    )
                 )
         except ButterflyMXAuthError as err:
             raise ConfigEntryAuthFailed(str(err)) from err
@@ -530,7 +537,11 @@ class ButterflyMXAccessLogCoordinator(DataUpdateCoordinator[dict[int, AccessLogE
         try:
             for building_id in topology.building_ids:
                 entries.extend(
-                    await self.client.async_get_access_logs(building_id, since=since)
+                    await self.client.async_get_access_logs(
+                        building_id,
+                        since=since,
+                        limit=PAGE_SIZE if self._priming else 20,
+                    )
                 )
         except ButterflyMXAuthError as err:
             raise ConfigEntryAuthFailed(str(err)) from err

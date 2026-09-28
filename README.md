@@ -39,6 +39,12 @@ your unit. A door called "Front Entrance" in an apartment 4B becomes
 | `sensor.<unit>_last_door_opened` | When a door was last opened, which one, and how: `PIN`, `Fob`, `App call` or `API`. |
 | `sensor.<unit>_passes` | How many visitor and delivery codes are currently valid, and what they are for. See [Visitor and delivery passes](#visitor-and-delivery-passes). |
 
+The two "last" sensors keep their value across a restart, so an update or a
+reboot does not blank them until the next visitor. On startup the integration
+also looks back a day, so a call or a door opening that happened while Home
+Assistant was down still lands in them. That look-back never rings the doorbell
+or fires an event.
+
 A ButterflyMX door has no lock to read. The intercom can buzz it open but never
 reports whether it is open or shut, so the lock entity shows unlocked for
 exactly as long as the door really stays open, then goes back to locked. That
