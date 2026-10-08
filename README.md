@@ -453,6 +453,31 @@ message: >-
 `resident` is on both `event.*_doorbell` and `event.*_door_opened`, and on the
 `butterflymx_call` and `butterflymx_door_release` bus events.
 
+**Know how a call ended.** A call answered in the ButterflyMX app is invisible
+to Home Assistant while it happens, so a "you missed a visitor" message would be
+wrong half the time. Once a call that rang is over, a `butterflymx_call_ended`
+event fires with the same fields as `butterflymx_call` and the status it ended
+on. Seen so far: `opened_door`, `canceled` (the visitor gave up) and
+`timeout_online_signal` (nobody picked up); `answered` and `declined` are
+expected for a call taken without opening the door. The last call sensor's
+`status` updates to match.
+
+```yaml
+triggers:
+  - trigger: event
+    event_type: butterflymx_call_ended
+    event_data:
+      status: timeout_online_signal
+actions:
+  - action: notify.notify
+    data:
+      message: "Missed a visitor for {{ trigger.event.data.resident }}"
+```
+
+Nothing is pushed when a call ends, so the integration reads the call log at
+the polling interval until the call settles, even with webhook push on, and
+gives up after three minutes.
+
 Before any of this, check you need it. If you share a unit, one entry may
 already cover both of you, and one is simpler than two.
 

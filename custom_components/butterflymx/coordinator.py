@@ -9,7 +9,8 @@ Two loops with very different cadences:
   available, does not feed calls in from the side: it asks this coordinator to
   read the log immediately.  A delivery carries no usable call ID, so the log
   stays the only place a call is ever read from and deduplication keeps working
-  on one set of IDs.
+  on one set of IDs.  A call that rang is then followed in the log until its
+  status says how it ended, because nothing is pushed when a call ends.
 """
 
 from __future__ import annotations
@@ -30,12 +31,15 @@ from .api import ButterflyMXClient
 from .const import (
     ACCESS_LOG_LOOKBACK,
     ACCESS_LOG_SCAN_INTERVAL,
+    CALL_FOLLOW_WINDOW,
     CALL_LOOKBACK,
     CALL_POLL_OVERLAP,
     DIRECT_LOCK_DEVICE_TYPES,
     DOMAIN,
     EVENT_CALL,
+    EVENT_CALL_ENDED,
     EVENT_DOOR_RELEASE,
+    FINISHED_CALL_STATUSES,
     LIVE_CALL_WINDOW,
     PAGE_SIZE,
     PASS_SCAN_INTERVAL,
@@ -305,6 +309,13 @@ class ButterflyMXCallCoordinator(DataUpdateCoordinator[dict[int, Call]]):
         self._seen_call_ids: dict[int, None] = {}
         self._since: datetime | None = None
         self._call_listeners: list[Callable[[Tenant, Call], None]] = []
+        # Calls that rang and have not ended yet, by call ID, with the tenant
+        # they were for.  While any are open the log is read at the configured
+        # pace even if webhook push has slowed polling down, since nothing is
+        # pushed when a call ends.
+        self._open_calls: dict[int, tuple[Tenant, Call]] = {}
+        self._follow_interval = timedelta(seconds=scan_interval)
+        self._idle_interval: timedelta | None = None
         # The first poll happens during setup and would otherwise re-announce
         # every call that came in while Home Assistant was down.
         #
@@ -335,6 +346,12 @@ class ButterflyMXCallCoordinator(DataUpdateCoordinator[dict[int, Call]]):
             return dict(self.data or {})
 
         since = self._since or dt_util.utcnow() - timedelta(seconds=CALL_LOOKBACK)
+        # Reach back far enough to see every open call again, so its status can
+        # be read.  The log is filtered by when a call was logged, not when it
+        # last changed.
+        opened = [call.logged_at for _, call in self._open_calls.values() if call.logged_at]
+        if opened:
+            since = min(since, min(opened) - timedelta(seconds=5))
         poll_started = dt_util.utcnow()
 
         calls: list[Call] = []
@@ -361,12 +378,23 @@ class ButterflyMXCallCoordinator(DataUpdateCoordinator[dict[int, Call]]):
         self._since = poll_started - timedelta(seconds=CALL_POLL_OVERLAP)
         data = self._process_calls(calls)
         self._priming = False
+        self._pace_for_open_calls()
         return data
 
     def _process_calls(self, calls: list[Call]) -> dict[int, Call]:
         """Deduplicate, announce and index new calls by tenant."""
         topology = self.topology_coordinator.data
         latest: dict[int, Call] = dict(self.data or {})
+
+        # Calls already announced come round again while they are being
+        # followed; one whose status has settled is reported as ended.
+        for call in calls:
+            if call.id in self._open_calls and call.status in FINISHED_CALL_STATUSES:
+                tenant, _ = self._open_calls.pop(call.id)
+                current = latest.get(tenant.id)
+                if current is not None and current.id == call.id:
+                    latest[tenant.id] = call
+                self._fire_call_ended(tenant, call)
 
         fresh = [call for call in calls if call.id not in self._seen_call_ids]
         fresh.sort(key=lambda call: (call.logged_at or dt_util.utc_from_timestamp(0), call.id))
@@ -413,7 +441,55 @@ class ButterflyMXCallCoordinator(DataUpdateCoordinator[dict[int, Call]]):
             for listener in list(self._call_listeners):
                 listener(tenant, call)
 
+            if call.status in FINISHED_CALL_STATUSES:
+                # Already over by the time it was first read, e.g. a slow poll.
+                self._fire_call_ended(tenant, call)
+            else:
+                self._open_calls[call.id] = (tenant, call)
+
+        self._drop_stale_open_calls()
         return latest
+
+    def _fire_call_ended(self, tenant: Tenant, call: Call) -> None:
+        """Say how a call ended: answered, declined, opened_door, canceled..."""
+        self.hass.bus.async_fire(
+            EVENT_CALL_ENDED,
+            {
+                "entry_id": self.config_entry.entry_id,
+                "tenant_id": tenant.id,
+                "unit_label": tenant.unit_label,
+                "resident": tenant.display_name,
+                **call.as_event_data(),
+            },
+        )
+
+    def _drop_stale_open_calls(self) -> None:
+        """Stop following calls that have not ended within the window."""
+        cutoff = dt_util.utcnow() - timedelta(seconds=CALL_FOLLOW_WINDOW)
+        for call_id, (_, call) in list(self._open_calls.items()):
+            if call.logged_at is None or call.logged_at < cutoff:
+                _LOGGER.debug(
+                    "Call %s still %s after %ss; no longer following it",
+                    call_id,
+                    call.status,
+                    CALL_FOLLOW_WINDOW,
+                )
+                del self._open_calls[call_id]
+
+    def _pace_for_open_calls(self) -> None:
+        """Poll at the configured pace while a call is open, then go back.
+
+        Webhook push slows the poll to a safety net, which is right for
+        noticing calls but far too slow to see one end.
+        """
+        if self._open_calls:
+            if self._idle_interval is None:
+                self._idle_interval = self.update_interval
+                if self.update_interval is None or self.update_interval > self._follow_interval:
+                    self.update_interval = self._follow_interval
+        elif self._idle_interval is not None:
+            self.update_interval = self._idle_interval
+            self._idle_interval = None
 
     def recent_call_for_tenant(self, tenant_id: int) -> Call | None:
         """Return this tenancy's last call if it is recent enough to be worth asking about.
@@ -424,9 +500,8 @@ class ButterflyMXCallCoordinator(DataUpdateCoordinator[dict[int, Call]]):
         opening, when almost none of them have a visitor attached.
 
         The status on the record here cannot be used for the real decision.
-        The coordinator skips calls it has already seen, so this copy keeps the
-        status the call had when it first appeared, which for a ringing call is
-        ``initializing`` and stays that way.
+        It is only updated once the call has ended, so while it rings it says
+        ``initializing`` and lags the live status by up to a poll.
         """
         call = (self.data or {}).get(tenant_id)
         if call is None or call.logged_at is None:

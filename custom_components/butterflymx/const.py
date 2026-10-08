@@ -112,6 +112,12 @@ FINISHED_CALL_STATUSES: Final[frozenset[str]] = frozenset(
     {"canceled", "timeout_online_signal", "opened_door", "declined", "answered"}
 )
 
+# How long a call that rang is followed in the call log, waiting for it to end.
+# The app rings for 40 seconds; this leaves room for a conversation before the
+# resident opens the door or hangs up.  A call still open after this is dropped
+# without an ended event.
+CALL_FOLLOW_WINDOW: Final = 180  # seconds
+
 # Access token lifetime is documented as 24h; refresh this far ahead of expiry.
 TOKEN_EXPIRY_MARGIN: Final = 300  # seconds
 
@@ -201,6 +207,11 @@ DIRECT_LOCK_DEVICE_TYPES: Final[frozenset[str]] = frozenset(
 # --- Events -------------------------------------------------------------------
 
 EVENT_CALL: Final = "butterflymx_call"
+
+# Fired once a call that rang is over, with the status it ended on (one of
+# FINISHED_CALL_STATUSES).  Nothing pushes this: a webhook delivery only says a
+# call started, so the call log is re-read until the call's status settles.
+EVENT_CALL_ENDED: Final = "butterflymx_call_ended"
 
 # The event type a doorbell entity fires.  Home Assistant standardizes this as
 # "ring" for anything with the doorbell device class, and warns on startup if it
